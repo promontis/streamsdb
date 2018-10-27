@@ -1,0 +1,2 @@
+#/bin/sh
+fdbcli --exec 'writemode on; clearrange \x00 \xff'
