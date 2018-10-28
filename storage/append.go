@@ -11,14 +11,13 @@ import (
 )
 
 func (this *FdbStreams) Append(id StreamId, messages ...Message) (StreamPosition, error) {
-	this.log.Debug("append started", zap.String("stream-id", id.Stringer()), zap.Int("message-count", len(messages)))
-
 	// create chunks
 	chunks, err := toChunks(messages)
 	if err != nil {
 		err = errors.Wrap(err, "chunks creation failed")
 		return NilStreamPosition, err
 	}
+	this.log.Debug("append started", zap.String("stream-id", id.Stringer()), zap.Int("message-count", len(messages)), zap.Int("chunk-count", len(chunks)))
 
 	// prepare
 	blockId, err := this.writeBlock(id, chunks)
