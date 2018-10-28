@@ -155,32 +155,24 @@ func (this *FdbStreams) readValue(tx fdb.ReadTransaction, space ValueSpace) ([]b
 // optimal maxiumem value size of 10kb per key
 func (this *FdbStreams) writeValue(tx fdb.Transaction, space ValueSpace, value []byte) error {
 	toWrite := len(value)
+	limit := int(10 * datasize.KB)
 
-	chunks := 1
-	if toWrite > limit {
-		chunks = int(math.Ceil(float64(toWrite) / limit))
+	i := 0
+	buf := value
+	for ; len(buf) >= limit; i++ {
+		tx.Set(space.Sub(i), buf[0:limit])
+		buf = buf[limit:]
+	}
+
+	if len(buf) > 0 {
+		tx.Set(space.Sub(i), buf)
 	}
 
 	ns := make([]byte, 6, 6)
-	binary.BigEndian.PutUint16(ns[0:], uint16(chunks))
+	binary.BigEndian.PutUint16(ns[0:], uint16(i+1))
 	binary.BigEndian.PutUint32(ns[2:], uint32(toWrite))
 
 	tx.Set(space.Sub("ns"), ns)
-
-	for chunk := 0; chunk < int(chunks); chunk++ {
-		min := func(a, b int) int {
-			if a < b {
-				return a
-			}
-			return b
-		}
-
-		start := chunk * limit
-		length := start + min(toWrite-start, limit)
-
-		sub := value[start:length]
-		tx.Set(space.Sub(chunk), sub)
-	}
 	return nil
 }
 
@@ -196,19 +188,17 @@ func (this BlockSpace) Message(n int) MessageSpace {
 	return MessageSpace{this.Sub(n)}
 }
 
-func (this RootSpace) Block(id uuid.UUID) BlockSpace {
+func (this RootSpace) Block(id xid.ID) BlockSpace {
 	return BlockSpace{this.Sub(id[:])}
 }
 
-func (this *FdbStreams) writeChunk(ctx context.Context, blockId uuid.UUID, c Chunk, complete chan error) {
+func (this *FdbStreams) writeChunk(ctx context.Context, block BlockSpace, offset int, messages []Message, complete chan error) {
 	_, err := this.db.Transact(func(tx fdb.Transaction) (interface{}, error) {
-		block := this.rootSpace.Block(blockId)
-
-		for i, m := range c.Messages {
-			if err := this.writeValue(tx, block.Message(i).Header(), m.Header); err != nil {
+		for i, m := range messages {
+			if err := this.writeValue(tx, block.Message(offset+i).Header(), m.Header); err != nil {
 				return nil, err
 			}
-			if err := this.writeValue(tx, block.Message(i).Value(), m.Payload); err != nil {
+			if err := this.writeValue(tx, block.Message(offset+i).Value(), m.Payload); err != nil {
 				return nil, err
 			}
 		}
