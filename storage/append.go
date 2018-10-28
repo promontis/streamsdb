@@ -5,8 +5,8 @@ import (
 
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/c2h5oh/datasize"
-	"github.com/google/uuid"
 	"github.com/pkg/errors"
+	"github.com/rs/xid"
 	"go.uber.org/zap"
 )
 
@@ -74,19 +74,20 @@ func toChunks(messages []Message) ([]Chunk, error) {
 	return chunked, nil
 }
 
-func (this *FdbStreams) writeBlock(id StreamId, chunks []Chunk) (uuid.UUID, error) {
+func (this *FdbStreams) writeBlock(id StreamId, chunks []Chunk) (xid.ID, error) {
 	done := make(chan struct{})
 	defer close(done)
 
-	blockId := uuid.New()
+	blockId := xid.New()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	complete := make(chan error)
+	block := this.rootSpace.Block(blockId)
 
 	for _, c := range chunks {
-		go this.writeChunk(ctx, blockId, c, complete)
+		go this.writeChunk(ctx, block, c.Position, c.Messages, complete)
 	}
 
 	for i := 0; i < len(chunks); i++ {
@@ -98,7 +99,7 @@ func (this *FdbStreams) writeBlock(id StreamId, chunks []Chunk) (uuid.UUID, erro
 	return blockId, nil
 }
 
-func (this *FdbStreams) safelyLinkBlock(stream StreamSpace, blockId uuid.UUID, messages []Message) (StreamPosition, error) {
+func (this *FdbStreams) safelyLinkBlock(stream StreamSpace, blockId xid.ID, messages []Message) (StreamPosition, error) {
 	// TODO: remove unsuccesful blocks
 	pos, err := this.db.Transact(func(tx fdb.Transaction) (interface{}, error) {
 		head, err := stream.ReadPosition(tx)

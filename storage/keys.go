@@ -6,6 +6,7 @@ import (
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/subspace"
 	"github.com/google/uuid"
+	"github.com/rs/xid"
 )
 
 const (
@@ -70,7 +71,7 @@ type PositionToBlockIndexSpace struct {
 	subspace.Subspace
 }
 
-func (this PositionToBlockIndexSpace) Set(tx fdb.Transaction, blockId uuid.UUID, messageIndex int, messageSize int) error {
+func (this PositionToBlockIndexSpace) Set(tx fdb.Transaction, blockId xid.ID, messageIndex int, messageSize int) error {
 	indexBuf := make([]byte, 16)
 	binary.BigEndian.PutUint32(indexBuf, uint32(messageIndex))
 	binary.BigEndian.PutUint32(indexBuf[4:], uint32(messageSize))

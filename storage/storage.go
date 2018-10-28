@@ -4,22 +4,21 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"math"
 	"strconv"
 
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/subspace"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/c2h5oh/datasize"
-	"github.com/google/uuid"
 	"github.com/pkg/errors"
+	"github.com/rs/xid"
 	"go.uber.org/zap"
 )
 
 const (
 	MESSAGE_HEADER_LIMIT  = 1 * datasize.MB
 	MESSAGE_PAYLOAD_LIMIT = 5 * datasize.MB
-	CHUNK_LIMIT           = 9 * datasize.B
+	CHUNK_LIMIT           = 9 * datasize.MB
 	VALUE_LIMIT           = 10 * datasize.KB
 )
 
@@ -152,12 +151,14 @@ func (this *FdbStreams) readValue(tx fdb.ReadTransaction, space ValueSpace) ([]b
 	return nil, errors.New("not found")
 }
 
+// writeValue writes a binary block to a value key space split by the
+// optimal maxiumem value size of 10kb per key
 func (this *FdbStreams) writeValue(tx fdb.Transaction, space ValueSpace, value []byte) error {
 	toWrite := len(value)
 
 	chunks := 1
-	if toWrite > VALUE_LIMIT {
-		chunks = int(math.Ceil(float64(toWrite) / VALUE_LIMIT))
+	if toWrite > limit {
+		chunks = int(math.Ceil(float64(toWrite) / limit))
 	}
 
 	ns := make([]byte, 6, 6)
@@ -166,7 +167,6 @@ func (this *FdbStreams) writeValue(tx fdb.Transaction, space ValueSpace, value [
 
 	tx.Set(space.Sub("ns"), ns)
 
-	// write all chunks except last
 	for chunk := 0; chunk < int(chunks); chunk++ {
 		min := func(a, b int) int {
 			if a < b {

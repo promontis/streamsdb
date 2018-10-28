@@ -2,11 +2,12 @@ package storage
 
 import (
 	"encoding/binary"
+	"fmt"
 
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/c2h5oh/datasize"
-	"github.com/google/uuid"
 	"github.com/pkg/errors"
+	"github.com/rs/xid"
 	"go.uber.org/zap"
 )
 
@@ -18,7 +19,7 @@ type ReadResult struct {
 }
 
 type BlockMessagePointer struct {
-	blockId      uuid.UUID
+	blockId      xid.ID
 	messageIndex int
 	messageSize  int
 }
@@ -47,8 +48,8 @@ func (this *FdbStreams) pre(stream StreamSpace, from StreamPosition, length int)
 
 		to := from.NextN(length).OrLower(head).Next()
 		keyRange := fdb.KeyRange{
-			stream.PositionToBlockIndex().Position(from),
-			stream.PositionToBlockIndex().Position(to),
+			Begin: stream.PositionToBlockIndex().Position(from),
+			End:   stream.PositionToBlockIndex().Position(to),
 		}
 		keys, err := snapshot.GetRange(keyRange, fdb.RangeOptions{Mode: fdb.StreamingModeWantAll}).GetSliceWithError()
 		if err != nil {
@@ -57,12 +58,14 @@ func (this *FdbStreams) pre(stream StreamSpace, from StreamPosition, length int)
 
 		messages := make([]BlockMessagePointer, len(keys))
 		for n, kv := range keys {
-			blockId := new(uuid.UUID)
-			blockId.UnmarshalBinary(kv.Value[0:16])
+			blockId, err := xid.FromBytes(kv.Value[0:12])
+			if err != nil {
+				return nil, errors.Wrap(err, fmt.Sprintf("invalid block id at message pointer %v", from.NextN(n)))
+			}
 
-			messageIndex := int(binary.BigEndian.Uint32(kv.Value[16:]))
-			messageSize := int(binary.BigEndian.Uint32(kv.Value[24:]))
-			messages[n] = BlockMessagePointer{*blockId, messageIndex, messageSize}
+			messageIndex := int(binary.BigEndian.Uint32(kv.Value[12:]))
+			messageSize := int(binary.BigEndian.Uint32(kv.Value[20:]))
+			messages[n] = BlockMessagePointer{blockId, messageIndex, messageSize}
 		}
 
 		return ReadPreparationState{
