@@ -1,24 +1,32 @@
 package storage
 
 import (
+	"bytes"
 	"math/rand"
 	"testing"
 	"time"
 
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
+	"github.com/c2h5oh/datasize"
 	"github.com/pjvds/randombytes"
-	"github.com/stretchr/testify/assert"
+	"github.com/rs/xid"
+	"go.uber.org/zap"
 )
 
-func TestChunk(t *testing.T) {
-	messages := []Message{
-		{Payload: randombytes.Make(int(CHUNK_LIMIT / 3))}, // chunk 1
-		{Payload: randombytes.Make(int(CHUNK_LIMIT / 3))}, // chunk 1
-		{Payload: randombytes.Make(int(CHUNK_LIMIT / 3))}, // chunk 1
-		{Payload: randombytes.Make(int(CHUNK_LIMIT / 3))}, // chunk 2
-		{Payload: randombytes.Make(int(CHUNK_LIMIT / 3))}, // chunk 2
-		{Payload: randombytes.Make(int(CHUNK_LIMIT / 3))}, // chunk 2
-		{Payload: randombytes.Make(int(CHUNK_LIMIT / 3))}, // chunk 3
+func TestStreamAppendRoundtripWithLargePayload(t *testing.T) {
+	header := randombytes.Make(int(1 * datasize.MB))
+	value := randombytes.Make(int(8 * datasize.MB))
+
+	fdb.MustAPIVersion(520)
+	db := fdb.MustOpenDefault()
+	store := OpenFdb(db, zap.NewNop())
+	rand.Seed(time.Now().UnixNano())
+
+	stream := StreamId(rand.Uint64())
+
+	pos, err := store.Append(stream, Message{header, value})
+	if err != nil {
+		t.Fatalf("append error: %v", err)
 	}
 
 	//	assert.Len(t, toChunks(messages[0:2]), 1)
