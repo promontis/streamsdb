@@ -1,4 +1,4 @@
-module github.com/pjvds/streamdb
+module github.com/pjvds/streamdbs
 
 require (
 	9fans.net/go v0.0.0-20180727211846-5d4fa602e1e8 // indirect
