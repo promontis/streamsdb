@@ -164,8 +164,13 @@ func (this *FdbStreams) Read(id StreamId, from StreamPosition, length int) (Read
 				return messages, nil
 			})
 
+			var typed []Message
+			if err == nil {
+				typed = msgs.([]Message)
+			}
+
 			select {
-			case complete <- MessagesOrError{msgs.([]Message), err}:
+			case complete <- MessagesOrError{typed, err}:
 			case <-done:
 			}
 		}(c)
