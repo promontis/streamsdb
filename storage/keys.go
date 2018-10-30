@@ -2,19 +2,22 @@ package storage
 
 import (
 	"encoding/binary"
+	"fmt"
 
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/subspace"
+	"github.com/c2h5oh/datasize"
 	"github.com/google/uuid"
+	"github.com/pkg/errors"
 	"github.com/rs/xid"
 )
 
 const (
-	ElemBlocks   = "blocks"
-	ElemBlock    = "block"
-	ElemHeader   = "header"
-	ElemValue    = "value"
-	ElemPosition = "position"
+	ElemBlocks   = iota
+	ElemBlock    = iota
+	ElemHeader   = iota
+	ElemValue    = iota
+	ElemPosition = iota
 )
 
 type RootSpace struct {
