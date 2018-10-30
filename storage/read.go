@@ -142,17 +142,15 @@ func (this *FdbStreams) Read(id StreamId, from StreamPosition, length int) (Read
 	for _, c := range chunks {
 		go func(pointers []BlockMessagePointer) {
 			msgs, err := this.db.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
-				snapshot := tx.Snapshot()
-
 				// TODO do not read in a blocking fashion
 				messages := make([]Message, len(pointers))
 				for i, ptr := range pointers {
 					msgSpace := this.rootSpace.Block(ptr.blockId).Message(ptr.messageIndex)
-					header, err := this.readValue(snapshot, msgSpace.Header())
+					header, err := msgSpace.Header().Read(tx)
 					if err != nil {
 						return nil, errors.Wrap(err, "header read failed")
 					}
-					value, err := this.readValue(snapshot, msgSpace.Value())
+					value, err := msgSpace.Value().Read(tx)
 					if err != nil {
 						return nil, errors.Wrap(err, "value read failed")
 					}

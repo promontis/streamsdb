@@ -122,60 +122,6 @@ func PutUint64(value uint64) []byte {
 	return buf
 }
 
-// readValue should not be blocking!
-func (this *FdbStreams) readValue(tx fdb.ReadTransaction, space ValueSpace) ([]byte, error) {
-	if value := tx.Get(space.Sub("ns")).MustGet(); value != nil {
-		n := int(binary.BigEndian.Uint16(value[0:]))
-		s := int(binary.BigEndian.Uint32(value[2:]))
-
-		if n == 0 {
-			return []byte{}, nil
-		}
-
-		value := make([]byte, 0, s)
-		chunks := make([]fdb.FutureByteSlice, n, n)
-		for chunk := 0; chunk < n; chunk++ {
-			chunks[chunk] = tx.Get(space.Sub(chunk))
-		}
-
-		for chunk := 0; chunk < n; chunk++ {
-			value = append(value, chunks[chunk].MustGet()...)
-		}
-
-		if s != len(value) {
-			return nil, errors.New("read short")
-		}
-
-		return value, nil
-	}
-	return nil, errors.New("not found")
-}
-
-// writeValue writes a binary block to a value key space split by the
-// optimal maxiumem value size of 10kb per key
-func (this *FdbStreams) writeValue(tx fdb.Transaction, space ValueSpace, value []byte) error {
-	toWrite := len(value)
-	limit := int(10 * datasize.KB)
-
-	i := 0
-	buf := value
-	for ; len(buf) >= limit; i++ {
-		tx.Set(space.Sub(i), buf[0:limit])
-		buf = buf[limit:]
-	}
-
-	if len(buf) > 0 {
-		tx.Set(space.Sub(i), buf)
-	}
-
-	ns := make([]byte, 6, 6)
-	binary.BigEndian.PutUint16(ns[0:], uint16(i+1))
-	binary.BigEndian.PutUint32(ns[2:], uint32(toWrite))
-
-	tx.Set(space.Sub("ns"), ns)
-	return nil
-}
-
 func (this StreamPosition) IsBeforeOrAt(pos StreamPosition) bool {
 	return this <= pos
 }
@@ -195,12 +141,9 @@ func (this RootSpace) Block(id xid.ID) BlockSpace {
 func (this *FdbStreams) writeChunk(ctx context.Context, block BlockSpace, offset int, messages []Message, complete chan error) {
 	_, err := this.db.Transact(func(tx fdb.Transaction) (interface{}, error) {
 		for i, m := range messages {
-			if err := this.writeValue(tx, block.Message(offset+i).Header(), m.Header); err != nil {
-				return nil, err
-			}
-			if err := this.writeValue(tx, block.Message(offset+i).Value(), m.Payload); err != nil {
-				return nil, err
-			}
+			message := block.Message(offset + i)
+			message.Header().Set(tx, m.Header)
+			message.Value().Set(tx, m.Payload)
 		}
 		return nil, nil
 	})

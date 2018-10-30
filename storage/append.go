@@ -89,7 +89,7 @@ func (this *FdbStreams) writeBlock(id StreamId, chunks []Chunk) (xid.ID, error) 
 		go this.writeChunk(ctx, block, c.Position, c.Messages, complete)
 	}
 
-	for i := 0; i < len(chunks); i++ {
+	for range chunks {
 		if err := <-complete; err != nil {
 			// TODO: cleanup chunks?
 			return blockId, err
