@@ -1,11 +1,15 @@
 package main
 
 import (
-	"bufio"
 	"os"
 
+	"io"
+
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
-	"github.com/pjvds/streamdb/storage"
+	//"github.com/francoispqt/gojay"
+	"encoding/json"
+
+	"github.com/pjvds/streamsdb/storage"
 	"github.com/urfave/cli"
 	"go.uber.org/zap"
 )
@@ -27,19 +31,24 @@ func main() {
 		{
 			Name: "append",
 			Action: func(c *cli.Context) error {
+				var rawJson json.RawMessage
 				stream := storage.StreamId(c.Args().First())
-
-				reader := bufio.NewReader(os.Stdin)
-				value, err := reader.ReadString('\n')
-				for err == nil {
-					if pos, err := streamdb.Append(stream, storage.Message{Payload: []byte(value)}); err != nil {
-						return err
-					} else {
-						println(pos)
-						value, err = reader.ReadString('\n')
+				decoder := json.NewDecoder(os.Stdin)
+				for {
+					if err := decoder.Decode(&rawJson); err != nil {
+						if err == io.EOF {
+							return nil
+						}
+						println(err.Error())
+						return nil
+					}
+					if _, err := streamdb.Append(stream, storage.Message{
+						Payload: rawJson,
+					}); err != nil {
+						println(err.Error())
+						return nil
 					}
 				}
-				return err
 			},
 		},
 		{
