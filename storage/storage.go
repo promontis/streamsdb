@@ -34,7 +34,7 @@ func (this StreamId) Stringer() string {
 }
 
 func (this StreamId) FDBKey() fdb.Key {
-	return []byte(this)
+	return tuple.Tuple{string(this)}.Pack()
 }
 
 type StreamPosition int64
