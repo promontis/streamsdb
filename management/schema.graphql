@@ -1,0 +1,30 @@
+type Query {
+  messages(id: String!, pos: Int!, n: Int): MessagesResult
+}
+
+type AppendResult{
+pos: Int!
+}
+
+type Mutation {
+  append(id: String!, messages: [MessageInput!]!): AppendResult
+}
+
+type MessagesResult {
+from: Int!
+messages: [Message!]
+next: Int
+previous: Int
+}
+
+input MessageInput{
+header: String
+value: String
+}
+
+type Message{
+streamId: String!
+header: String!
+value: String!
+}
+

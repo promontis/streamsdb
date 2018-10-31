@@ -10,7 +10,6 @@ import (
 	"github.com/apple/foundationdb/bindings/go/src/fdb/subspace"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/c2h5oh/datasize"
-	"github.com/pkg/errors"
 	"github.com/rs/xid"
 	"go.uber.org/zap"
 )
