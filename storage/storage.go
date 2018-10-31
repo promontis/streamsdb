@@ -28,7 +28,7 @@ type Message struct {
 
 type StreamId string
 
-func (this StreamId) Stringer() string {
+func (this StreamId) String() string {
 	return string(this)
 }
 

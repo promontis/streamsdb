@@ -31,8 +31,6 @@ type ReadPreparationState struct {
 }
 
 func (this *FdbStreams) pre(stream StreamSpace, from StreamPosition, length int) (ReadPreparationState, error) {
-	log := this.log.Named("pre")
-
 	result, err := this.db.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
 		snapshot := tx.Snapshot()
 
@@ -40,7 +38,6 @@ func (this *FdbStreams) pre(stream StreamSpace, from StreamPosition, length int)
 		if err != nil {
 			return ReadResult{}, err
 		}
-		log.Debug("position read", zap.Stringer("head", head))
 
 		if from.IsAfter(head) {
 			return ReadPreparationState{from, head, nil}, nil
@@ -121,11 +118,27 @@ type MessagesOrError struct {
 }
 
 func (this *FdbStreams) Read(id StreamId, from StreamPosition, length int) (ReadResult, error) {
+	if ce := this.log.Check(zap.DebugLevel, "preparing to read from stream"); ce != nil {
+		ce.Write(zap.Stringer("stream", id),
+			zap.Stringer("from", from),
+			zap.Int("length", length))
+	}
 	stream := this.rootSpace.Stream(id)
 
 	scan, err := this.pre(stream, from, length)
 	if err != nil {
+		this.log.Debug("read pre scan failed", zap.Stringer("id", id), zap.Stringer("from", from), zap.Int("length", length), zap.Error(err))
 		return ReadResult{}, err
+	}
+
+	if ce := this.log.Check(zap.DebugLevel, "pre scan success"); ce != nil {
+		ce.Write(zap.Any("result", scan))
+	}
+
+	if ce := this.log.Check(zap.DebugLevel, "preparing to read from stream"); ce != nil {
+		ce.Write(zap.Stringer("stream", id),
+			zap.Stringer("from", from),
+			zap.Int("length", length))
 	}
 
 	if len(scan.Messages) == 0 {
