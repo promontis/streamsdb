@@ -101,11 +101,13 @@ func (this *FdbStreams) writeBlock(id StreamId, chunks []Chunk) (xid.ID, error) 
 func (this *FdbStreams) safelyLinkBlock(stream StreamSpace, blockId xid.ID, messages []Message) (StreamPosition, error) {
 	// TODO: remove unsuccesful blocks
 	pos, err := this.db.Transact(func(tx fdb.Transaction) (interface{}, error) {
-		head, err := stream.ReadPosition(tx)
+		pos, err := stream.ReadPosition(tx)
 		if err != nil {
 			return NilStreamPosition, errors.Wrap(err, "read stream position failed")
 		}
 
+		start := pos.Next()
+		head := start
 		index := stream.PositionToBlockIndex()
 		for i, m := range messages {
 			head = head.Next()
@@ -113,7 +115,7 @@ func (this *FdbStreams) safelyLinkBlock(stream StreamSpace, blockId xid.ID, mess
 		}
 
 		stream.SetPosition(tx, head)
-		return head, nil
+		return start, nil
 	})
 
 	return pos.(StreamPosition), err
