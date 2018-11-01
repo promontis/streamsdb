@@ -2,8 +2,14 @@
 
 package management
 
+import (
+	fmt "fmt"
+	io "io"
+	strconv "strconv"
+)
+
 type AppendResult struct {
-	Pos int `json:"pos"`
+	From int `json:"from"`
 }
 
 type Message struct {
@@ -17,9 +23,46 @@ type MessageInput struct {
 	Value  *string `json:"value"`
 }
 
-type MessagesResult struct {
-	From     int       `json:"from"`
-	Messages []Message `json:"messages"`
-	Next     *int      `json:"next"`
-	Previous *int      `json:"previous"`
+type Slice struct {
+	Stream    string    `json:"stream"`
+	From      int       `json:"from"`
+	Count     int       `json:"count"`
+	Messages  []Message `json:"messages"`
+	Direction Direction `json:"direction"`
+}
+
+type Direction string
+
+const (
+	DirectionForward  Direction = "FORWARD"
+	DirectionBackward Direction = "BACKWARD"
+)
+
+func (e Direction) IsValid() bool {
+	switch e {
+	case DirectionForward, DirectionBackward:
+		return true
+	}
+	return false
+}
+
+func (e Direction) String() string {
+	return string(e)
+}
+
+func (e *Direction) UnmarshalGQL(v interface{}) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = Direction(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid Direction", str)
+	}
+	return nil
+}
+
+func (e Direction) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
 }

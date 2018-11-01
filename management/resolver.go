@@ -45,18 +45,18 @@ func (r *mutationResolver) Append(ctx context.Context, id string, messages []Mes
 	}
 
 	return &AppendResult{
-		Pos: int(result),
+		From: int(result),
 	}, nil
 }
 
 type queryResolver struct{ *Resolver }
 
-func (r *queryResolver) Messages(ctx context.Context, id string, pos int, n *int) (*MessagesResult, error) {
-	streamId := storage.StreamId(id)
-	streamPos := storage.StreamPosition(pos)
+func (r *queryResolver) Read(ctx context.Context, name string, from int, maxCount *int, direction *Direction) (*Slice, error) {
+	streamId := storage.StreamId(name)
+	streamPos := storage.StreamPosition(from)
 	streamN := 10
-	if n != nil {
-		streamN = *n
+	if maxCount != nil {
+		streamN = *maxCount
 	}
 
 	result, err := r.Store.Read(streamId, streamPos, streamN)
@@ -72,8 +72,11 @@ func (r *queryResolver) Messages(ctx context.Context, id string, pos int, n *int
 		}
 	}
 
-	return &MessagesResult{
-		From:     int(result.From),
-		Messages: messages,
+	return &Slice{
+		Stream:    name,
+		From:      int(result.From),
+		Count:     len(messages),
+		Messages:  messages,
+		Direction: DirectionForward,
 	}, nil
 }

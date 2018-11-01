@@ -39,7 +39,7 @@ type DirectiveRoot struct {
 
 type ComplexityRoot struct {
 	AppendResult struct {
-		Pos func(childComplexity int) int
+		From func(childComplexity int) int
 	}
 
 	Message struct {
@@ -48,19 +48,20 @@ type ComplexityRoot struct {
 		Value    func(childComplexity int) int
 	}
 
-	MessagesResult struct {
-		From     func(childComplexity int) int
-		Messages func(childComplexity int) int
-		Next     func(childComplexity int) int
-		Previous func(childComplexity int) int
-	}
-
 	Mutation struct {
 		Append func(childComplexity int, id string, messages []MessageInput) int
 	}
 
 	Query struct {
-		Messages func(childComplexity int, id string, pos int, n *int) int
+		Read func(childComplexity int, name string, from int, maxCount *int, direction *Direction) int
+	}
+
+	Slice struct {
+		Stream    func(childComplexity int) int
+		From      func(childComplexity int) int
+		Count     func(childComplexity int) int
+		Messages  func(childComplexity int) int
+		Direction func(childComplexity int) int
 	}
 }
 
@@ -68,7 +69,7 @@ type MutationResolver interface {
 	Append(ctx context.Context, id string, messages []MessageInput) (*AppendResult, error)
 }
 type QueryResolver interface {
-	Messages(ctx context.Context, id string, pos int, n *int) (*MessagesResult, error)
+	Read(ctx context.Context, name string, from int, maxCount *int, direction *Direction) (*Slice, error)
 }
 
 func field_Mutation_append_args(rawArgs map[string]interface{}) (map[string]interface{}, error) {
@@ -106,28 +107,28 @@ func field_Mutation_append_args(rawArgs map[string]interface{}) (map[string]inte
 
 }
 
-func field_Query_messages_args(rawArgs map[string]interface{}) (map[string]interface{}, error) {
+func field_Query_read_args(rawArgs map[string]interface{}) (map[string]interface{}, error) {
 	args := map[string]interface{}{}
 	var arg0 string
-	if tmp, ok := rawArgs["id"]; ok {
+	if tmp, ok := rawArgs["name"]; ok {
 		var err error
 		arg0, err = graphql.UnmarshalString(tmp)
 		if err != nil {
 			return nil, err
 		}
 	}
-	args["id"] = arg0
+	args["name"] = arg0
 	var arg1 int
-	if tmp, ok := rawArgs["pos"]; ok {
+	if tmp, ok := rawArgs["from"]; ok {
 		var err error
 		arg1, err = graphql.UnmarshalInt(tmp)
 		if err != nil {
 			return nil, err
 		}
 	}
-	args["pos"] = arg1
+	args["from"] = arg1
 	var arg2 *int
-	if tmp, ok := rawArgs["n"]; ok {
+	if tmp, ok := rawArgs["maxCount"]; ok {
 		var err error
 		var ptr1 int
 		if tmp != nil {
@@ -139,7 +140,21 @@ func field_Query_messages_args(rawArgs map[string]interface{}) (map[string]inter
 			return nil, err
 		}
 	}
-	args["n"] = arg2
+	args["maxCount"] = arg2
+	var arg3 *Direction
+	if tmp, ok := rawArgs["direction"]; ok {
+		var err error
+		var ptr1 Direction
+		if tmp != nil {
+			err = (&ptr1).UnmarshalGQL(tmp)
+			arg3 = &ptr1
+		}
+
+		if err != nil {
+			return nil, err
+		}
+	}
+	args["direction"] = arg3
 	return args, nil
 
 }
@@ -202,12 +217,12 @@ func (e *executableSchema) Schema() *ast.Schema {
 func (e *executableSchema) Complexity(typeName, field string, childComplexity int, rawArgs map[string]interface{}) (int, bool) {
 	switch typeName + "." + field {
 
-	case "AppendResult.pos":
-		if e.complexity.AppendResult.Pos == nil {
+	case "AppendResult.from":
+		if e.complexity.AppendResult.From == nil {
 			break
 		}
 
-		return e.complexity.AppendResult.Pos(childComplexity), true
+		return e.complexity.AppendResult.From(childComplexity), true
 
 	case "Message.streamId":
 		if e.complexity.Message.StreamId == nil {
@@ -230,34 +245,6 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 
 		return e.complexity.Message.Value(childComplexity), true
 
-	case "MessagesResult.from":
-		if e.complexity.MessagesResult.From == nil {
-			break
-		}
-
-		return e.complexity.MessagesResult.From(childComplexity), true
-
-	case "MessagesResult.messages":
-		if e.complexity.MessagesResult.Messages == nil {
-			break
-		}
-
-		return e.complexity.MessagesResult.Messages(childComplexity), true
-
-	case "MessagesResult.next":
-		if e.complexity.MessagesResult.Next == nil {
-			break
-		}
-
-		return e.complexity.MessagesResult.Next(childComplexity), true
-
-	case "MessagesResult.previous":
-		if e.complexity.MessagesResult.Previous == nil {
-			break
-		}
-
-		return e.complexity.MessagesResult.Previous(childComplexity), true
-
 	case "Mutation.append":
 		if e.complexity.Mutation.Append == nil {
 			break
@@ -270,17 +257,52 @@ func (e *executableSchema) Complexity(typeName, field string, childComplexity in
 
 		return e.complexity.Mutation.Append(childComplexity, args["id"].(string), args["messages"].([]MessageInput)), true
 
-	case "Query.messages":
-		if e.complexity.Query.Messages == nil {
+	case "Query.read":
+		if e.complexity.Query.Read == nil {
 			break
 		}
 
-		args, err := field_Query_messages_args(rawArgs)
+		args, err := field_Query_read_args(rawArgs)
 		if err != nil {
 			return 0, false
 		}
 
-		return e.complexity.Query.Messages(childComplexity, args["id"].(string), args["pos"].(int), args["n"].(*int)), true
+		return e.complexity.Query.Read(childComplexity, args["name"].(string), args["from"].(int), args["maxCount"].(*int), args["direction"].(*Direction)), true
+
+	case "Slice.stream":
+		if e.complexity.Slice.Stream == nil {
+			break
+		}
+
+		return e.complexity.Slice.Stream(childComplexity), true
+
+	case "Slice.from":
+		if e.complexity.Slice.From == nil {
+			break
+		}
+
+		return e.complexity.Slice.From(childComplexity), true
+
+	case "Slice.count":
+		if e.complexity.Slice.Count == nil {
+			break
+		}
+
+		return e.complexity.Slice.Count(childComplexity), true
+
+	case "Slice.messages":
+		if e.complexity.Slice.Messages == nil {
+			break
+		}
+
+		return e.complexity.Slice.Messages(childComplexity), true
+
+	case "Slice.direction":
+		if e.complexity.Slice.Direction == nil {
+			break
+		}
+
+		return e.complexity.Slice.Direction(childComplexity), true
 
 	}
 	return 0, false
@@ -342,8 +364,8 @@ func (ec *executionContext) _AppendResult(ctx context.Context, sel ast.Selection
 		switch field.Name {
 		case "__typename":
 			out.Values[i] = graphql.MarshalString("AppendResult")
-		case "pos":
-			out.Values[i] = ec._AppendResult_pos(ctx, field, obj)
+		case "from":
+			out.Values[i] = ec._AppendResult_from(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				invalid = true
 			}
@@ -359,7 +381,7 @@ func (ec *executionContext) _AppendResult(ctx context.Context, sel ast.Selection
 }
 
 // nolint: vetshadow
-func (ec *executionContext) _AppendResult_pos(ctx context.Context, field graphql.CollectedField, obj *AppendResult) graphql.Marshaler {
+func (ec *executionContext) _AppendResult_from(ctx context.Context, field graphql.CollectedField, obj *AppendResult) graphql.Marshaler {
 	ctx = ec.Tracer.StartFieldExecution(ctx, field)
 	defer ec.Tracer.EndFieldExecution(ctx)
 	rctx := &graphql.ResolverContext{
@@ -371,7 +393,7 @@ func (ec *executionContext) _AppendResult_pos(ctx context.Context, field graphql
 	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
 	resTmp := ec.FieldMiddleware(ctx, obj, func(rctx context.Context) (interface{}, error) {
 		ctx = rctx // use context from middleware stack in children
-		return obj.Pos, nil
+		return obj.From, nil
 	})
 	if resTmp == nil {
 		if !ec.HasError(rctx) {
@@ -506,182 +528,6 @@ func (ec *executionContext) _Message_value(ctx context.Context, field graphql.Co
 	return graphql.MarshalString(res)
 }
 
-var messagesResultImplementors = []string{"MessagesResult"}
-
-// nolint: gocyclo, errcheck, gas, goconst
-func (ec *executionContext) _MessagesResult(ctx context.Context, sel ast.SelectionSet, obj *MessagesResult) graphql.Marshaler {
-	fields := graphql.CollectFields(ctx, sel, messagesResultImplementors)
-
-	out := graphql.NewOrderedMap(len(fields))
-	invalid := false
-	for i, field := range fields {
-		out.Keys[i] = field.Alias
-
-		switch field.Name {
-		case "__typename":
-			out.Values[i] = graphql.MarshalString("MessagesResult")
-		case "from":
-			out.Values[i] = ec._MessagesResult_from(ctx, field, obj)
-			if out.Values[i] == graphql.Null {
-				invalid = true
-			}
-		case "messages":
-			out.Values[i] = ec._MessagesResult_messages(ctx, field, obj)
-		case "next":
-			out.Values[i] = ec._MessagesResult_next(ctx, field, obj)
-		case "previous":
-			out.Values[i] = ec._MessagesResult_previous(ctx, field, obj)
-		default:
-			panic("unknown field " + strconv.Quote(field.Name))
-		}
-	}
-
-	if invalid {
-		return graphql.Null
-	}
-	return out
-}
-
-// nolint: vetshadow
-func (ec *executionContext) _MessagesResult_from(ctx context.Context, field graphql.CollectedField, obj *MessagesResult) graphql.Marshaler {
-	ctx = ec.Tracer.StartFieldExecution(ctx, field)
-	defer ec.Tracer.EndFieldExecution(ctx)
-	rctx := &graphql.ResolverContext{
-		Object: "MessagesResult",
-		Args:   nil,
-		Field:  field,
-	}
-	ctx = graphql.WithResolverContext(ctx, rctx)
-	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
-	resTmp := ec.FieldMiddleware(ctx, obj, func(rctx context.Context) (interface{}, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.From, nil
-	})
-	if resTmp == nil {
-		if !ec.HasError(rctx) {
-			ec.Errorf(ctx, "must not be null")
-		}
-		return graphql.Null
-	}
-	res := resTmp.(int)
-	rctx.Result = res
-	ctx = ec.Tracer.StartFieldChildExecution(ctx)
-	return graphql.MarshalInt(res)
-}
-
-// nolint: vetshadow
-func (ec *executionContext) _MessagesResult_messages(ctx context.Context, field graphql.CollectedField, obj *MessagesResult) graphql.Marshaler {
-	ctx = ec.Tracer.StartFieldExecution(ctx, field)
-	defer ec.Tracer.EndFieldExecution(ctx)
-	rctx := &graphql.ResolverContext{
-		Object: "MessagesResult",
-		Args:   nil,
-		Field:  field,
-	}
-	ctx = graphql.WithResolverContext(ctx, rctx)
-	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
-	resTmp := ec.FieldMiddleware(ctx, obj, func(rctx context.Context) (interface{}, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Messages, nil
-	})
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.([]Message)
-	rctx.Result = res
-	ctx = ec.Tracer.StartFieldChildExecution(ctx)
-
-	arr1 := make(graphql.Array, len(res))
-	var wg sync.WaitGroup
-
-	isLen1 := len(res) == 1
-	if !isLen1 {
-		wg.Add(len(res))
-	}
-
-	for idx1 := range res {
-		idx1 := idx1
-		rctx := &graphql.ResolverContext{
-			Index:  &idx1,
-			Result: &res[idx1],
-		}
-		ctx := graphql.WithResolverContext(ctx, rctx)
-		f := func(idx1 int) {
-			if !isLen1 {
-				defer wg.Done()
-			}
-			arr1[idx1] = func() graphql.Marshaler {
-
-				return ec._Message(ctx, field.Selections, &res[idx1])
-			}()
-		}
-		if isLen1 {
-			f(idx1)
-		} else {
-			go f(idx1)
-		}
-
-	}
-	wg.Wait()
-	return arr1
-}
-
-// nolint: vetshadow
-func (ec *executionContext) _MessagesResult_next(ctx context.Context, field graphql.CollectedField, obj *MessagesResult) graphql.Marshaler {
-	ctx = ec.Tracer.StartFieldExecution(ctx, field)
-	defer ec.Tracer.EndFieldExecution(ctx)
-	rctx := &graphql.ResolverContext{
-		Object: "MessagesResult",
-		Args:   nil,
-		Field:  field,
-	}
-	ctx = graphql.WithResolverContext(ctx, rctx)
-	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
-	resTmp := ec.FieldMiddleware(ctx, obj, func(rctx context.Context) (interface{}, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Next, nil
-	})
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.(*int)
-	rctx.Result = res
-	ctx = ec.Tracer.StartFieldChildExecution(ctx)
-
-	if res == nil {
-		return graphql.Null
-	}
-	return graphql.MarshalInt(*res)
-}
-
-// nolint: vetshadow
-func (ec *executionContext) _MessagesResult_previous(ctx context.Context, field graphql.CollectedField, obj *MessagesResult) graphql.Marshaler {
-	ctx = ec.Tracer.StartFieldExecution(ctx, field)
-	defer ec.Tracer.EndFieldExecution(ctx)
-	rctx := &graphql.ResolverContext{
-		Object: "MessagesResult",
-		Args:   nil,
-		Field:  field,
-	}
-	ctx = graphql.WithResolverContext(ctx, rctx)
-	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
-	resTmp := ec.FieldMiddleware(ctx, obj, func(rctx context.Context) (interface{}, error) {
-		ctx = rctx // use context from middleware stack in children
-		return obj.Previous, nil
-	})
-	if resTmp == nil {
-		return graphql.Null
-	}
-	res := resTmp.(*int)
-	rctx.Result = res
-	ctx = ec.Tracer.StartFieldChildExecution(ctx)
-
-	if res == nil {
-		return graphql.Null
-	}
-	return graphql.MarshalInt(*res)
-}
-
 var mutationImplementors = []string{"Mutation"}
 
 // nolint: gocyclo, errcheck, gas, goconst
@@ -767,10 +613,10 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 		switch field.Name {
 		case "__typename":
 			out.Values[i] = graphql.MarshalString("Query")
-		case "messages":
+		case "read":
 			wg.Add(1)
 			go func(i int, field graphql.CollectedField) {
-				out.Values[i] = ec._Query_messages(ctx, field)
+				out.Values[i] = ec._Query_read(ctx, field)
 				wg.Done()
 			}(i, field)
 		case "__type":
@@ -789,11 +635,11 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 }
 
 // nolint: vetshadow
-func (ec *executionContext) _Query_messages(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
+func (ec *executionContext) _Query_read(ctx context.Context, field graphql.CollectedField) graphql.Marshaler {
 	ctx = ec.Tracer.StartFieldExecution(ctx, field)
 	defer ec.Tracer.EndFieldExecution(ctx)
 	rawArgs := field.ArgumentMap(ec.Variables)
-	args, err := field_Query_messages_args(rawArgs)
+	args, err := field_Query_read_args(rawArgs)
 	if err != nil {
 		ec.Error(ctx, err)
 		return graphql.Null
@@ -807,12 +653,12 @@ func (ec *executionContext) _Query_messages(ctx context.Context, field graphql.C
 	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
 	resTmp := ec.FieldMiddleware(ctx, nil, func(rctx context.Context) (interface{}, error) {
 		ctx = rctx // use context from middleware stack in children
-		return ec.resolvers.Query().Messages(rctx, args["id"].(string), args["pos"].(int), args["n"].(*int))
+		return ec.resolvers.Query().Read(rctx, args["name"].(string), args["from"].(int), args["maxCount"].(*int), args["direction"].(*Direction))
 	})
 	if resTmp == nil {
 		return graphql.Null
 	}
-	res := resTmp.(*MessagesResult)
+	res := resTmp.(*Slice)
 	rctx.Result = res
 	ctx = ec.Tracer.StartFieldChildExecution(ctx)
 
@@ -820,7 +666,7 @@ func (ec *executionContext) _Query_messages(ctx context.Context, field graphql.C
 		return graphql.Null
 	}
 
-	return ec._MessagesResult(ctx, field.Selections, res)
+	return ec._Slice(ctx, field.Selections, res)
 }
 
 // nolint: vetshadow
@@ -885,6 +731,218 @@ func (ec *executionContext) _Query___schema(ctx context.Context, field graphql.C
 	}
 
 	return ec.___Schema(ctx, field.Selections, res)
+}
+
+var sliceImplementors = []string{"Slice"}
+
+// nolint: gocyclo, errcheck, gas, goconst
+func (ec *executionContext) _Slice(ctx context.Context, sel ast.SelectionSet, obj *Slice) graphql.Marshaler {
+	fields := graphql.CollectFields(ctx, sel, sliceImplementors)
+
+	out := graphql.NewOrderedMap(len(fields))
+	invalid := false
+	for i, field := range fields {
+		out.Keys[i] = field.Alias
+
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("Slice")
+		case "stream":
+			out.Values[i] = ec._Slice_stream(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				invalid = true
+			}
+		case "from":
+			out.Values[i] = ec._Slice_from(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				invalid = true
+			}
+		case "count":
+			out.Values[i] = ec._Slice_count(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				invalid = true
+			}
+		case "messages":
+			out.Values[i] = ec._Slice_messages(ctx, field, obj)
+		case "direction":
+			out.Values[i] = ec._Slice_direction(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				invalid = true
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+
+	if invalid {
+		return graphql.Null
+	}
+	return out
+}
+
+// nolint: vetshadow
+func (ec *executionContext) _Slice_stream(ctx context.Context, field graphql.CollectedField, obj *Slice) graphql.Marshaler {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer ec.Tracer.EndFieldExecution(ctx)
+	rctx := &graphql.ResolverContext{
+		Object: "Slice",
+		Args:   nil,
+		Field:  field,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp := ec.FieldMiddleware(ctx, obj, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Stream, nil
+	})
+	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(string)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+	return graphql.MarshalString(res)
+}
+
+// nolint: vetshadow
+func (ec *executionContext) _Slice_from(ctx context.Context, field graphql.CollectedField, obj *Slice) graphql.Marshaler {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer ec.Tracer.EndFieldExecution(ctx)
+	rctx := &graphql.ResolverContext{
+		Object: "Slice",
+		Args:   nil,
+		Field:  field,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp := ec.FieldMiddleware(ctx, obj, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.From, nil
+	})
+	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+	return graphql.MarshalInt(res)
+}
+
+// nolint: vetshadow
+func (ec *executionContext) _Slice_count(ctx context.Context, field graphql.CollectedField, obj *Slice) graphql.Marshaler {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer ec.Tracer.EndFieldExecution(ctx)
+	rctx := &graphql.ResolverContext{
+		Object: "Slice",
+		Args:   nil,
+		Field:  field,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp := ec.FieldMiddleware(ctx, obj, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Count, nil
+	})
+	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(int)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+	return graphql.MarshalInt(res)
+}
+
+// nolint: vetshadow
+func (ec *executionContext) _Slice_messages(ctx context.Context, field graphql.CollectedField, obj *Slice) graphql.Marshaler {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer ec.Tracer.EndFieldExecution(ctx)
+	rctx := &graphql.ResolverContext{
+		Object: "Slice",
+		Args:   nil,
+		Field:  field,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp := ec.FieldMiddleware(ctx, obj, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Messages, nil
+	})
+	if resTmp == nil {
+		return graphql.Null
+	}
+	res := resTmp.([]Message)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+
+	arr1 := make(graphql.Array, len(res))
+	var wg sync.WaitGroup
+
+	isLen1 := len(res) == 1
+	if !isLen1 {
+		wg.Add(len(res))
+	}
+
+	for idx1 := range res {
+		idx1 := idx1
+		rctx := &graphql.ResolverContext{
+			Index:  &idx1,
+			Result: &res[idx1],
+		}
+		ctx := graphql.WithResolverContext(ctx, rctx)
+		f := func(idx1 int) {
+			if !isLen1 {
+				defer wg.Done()
+			}
+			arr1[idx1] = func() graphql.Marshaler {
+
+				return ec._Message(ctx, field.Selections, &res[idx1])
+			}()
+		}
+		if isLen1 {
+			f(idx1)
+		} else {
+			go f(idx1)
+		}
+
+	}
+	wg.Wait()
+	return arr1
+}
+
+// nolint: vetshadow
+func (ec *executionContext) _Slice_direction(ctx context.Context, field graphql.CollectedField, obj *Slice) graphql.Marshaler {
+	ctx = ec.Tracer.StartFieldExecution(ctx, field)
+	defer ec.Tracer.EndFieldExecution(ctx)
+	rctx := &graphql.ResolverContext{
+		Object: "Slice",
+		Args:   nil,
+		Field:  field,
+	}
+	ctx = graphql.WithResolverContext(ctx, rctx)
+	ctx = ec.Tracer.StartFieldResolverExecution(ctx, rctx)
+	resTmp := ec.FieldMiddleware(ctx, obj, func(rctx context.Context) (interface{}, error) {
+		ctx = rctx // use context from middleware stack in children
+		return obj.Direction, nil
+	})
+	if resTmp == nil {
+		if !ec.HasError(rctx) {
+			ec.Errorf(ctx, "must not be null")
+		}
+		return graphql.Null
+	}
+	res := resTmp.(Direction)
+	rctx.Result = res
+	ctx = ec.Tracer.StartFieldChildExecution(ctx)
+	return res
 }
 
 var __DirectiveImplementors = []string{"__Directive"}
@@ -2383,33 +2441,50 @@ func (ec *executionContext) introspectType(name string) *introspection.Type {
 
 var parsedSchema = gqlparser.MustLoadSchema(
 	&ast.Source{Name: "schema.graphql", Input: `type Query {
-  messages(id: String!, pos: Int!, n: Int): MessagesResult
+  # Returns a slice of the stream.
+  read(
+    # The name of the stream to read. (eq: "order-123")
+    name: String!, 
+    # The earliest message to read (inclusive).
+    from: Int!,
+    # The maximum number of messages to read. The actual slice might 
+    # be smaller than this count.
+    maxCount: Int, 
+    # The direction to read. If omitted the direction is FORWARD.
+    direction: Direction): Slice
+}
+
+enum Direction{
+  FORWARD
+  BACKWARD
 }
 
 type AppendResult{
-pos: Int!
+  # The position of the first message appended to the stream.
+  from: Int!
 }
 
 type Mutation {
   append(id: String!, messages: [MessageInput!]!): AppendResult
 }
 
-type MessagesResult {
-from: Int!
-messages: [Message!]
-next: Int
-previous: Int
+type Slice {
+  stream: String!
+  from: Int!
+  count: Int!
+  messages: [Message!]
+  direction: Direction!
 }
 
 input MessageInput{
-header: String
-value: String
+  header: String
+  value: String
 }
 
 type Message{
-streamId: String!
-header: String!
-value: String!
+  streamId: String!
+  header: String!
+  value: String!
 }
 
 `},

@@ -1,30 +1,49 @@
 type Query {
-  messages(id: String!, pos: Int!, n: Int): MessagesResult
+  # Returns a slice of the stream.
+  read(
+    # The name of the stream to read. (eq: "order-123")
+    name: String!, 
+    # The earliest message to read (inclusive).
+    from: Int!,
+    # The maximum number of messages to read. The actual slice might 
+    # be smaller than this count.
+    maxCount: Int, 
+    # The direction to read. If omitted the direction is FORWARD.
+    direction: Direction): Slice
+}
+
+enum Direction{
+  FORWARD
+  BACKWARD
 }
 
 type AppendResult{
-pos: Int!
+  # The position of the first message appended to the stream.
+  from: Int!
+  count: Int!
+  head: Int!
 }
 
 type Mutation {
   append(id: String!, messages: [MessageInput!]!): AppendResult
 }
 
-type MessagesResult {
-from: Int!
-messages: [Message!]
-next: Int
-previous: Int
+type Slice {
+  stream: String!
+  from: Int!
+  count: Int!
+  messages: [Message!]
+  direction: Direction!
 }
 
 input MessageInput{
-header: String
-value: String
+  header: String
+  value: String
 }
 
 type Message{
-streamId: String!
-header: String!
-value: String!
+  streamId: String!
+  header: String!
+  value: String!
 }
 
