@@ -20,22 +20,25 @@ type ReadResult struct {
 }
 
 type BlockMessagePointer struct {
-	blockId      xid.ID
-	messageIndex int
-	messageSize  int
+	BlockId      xid.ID
+	MessageIndex int
+	HeaderSize   int
+	ValueSize    int
+}
+
+func (this BlockMessagePointer) String() string {
+	return fmt.Sprintf("%v/%v", this.BlockId, this.MessageIndex)
 }
 
 type ReadPreparationState struct {
 	From     StreamPosition
 	Head     StreamPosition
-	Messages []BlockMessagePointer
+	Pointers []BlockMessagePointer
 }
 
 func (this *FdbStreams) pre(stream StreamSpace, from StreamPosition, length int) (ReadPreparationState, error) {
 	result, err := this.db.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
-		snapshot := tx.Snapshot()
-
-		head, err := stream.ReadPosition(snapshot)
+		head, err := stream.ReadPosition(tx)
 		if err != nil {
 			return ReadResult{}, err
 		}
@@ -49,7 +52,7 @@ func (this *FdbStreams) pre(stream StreamSpace, from StreamPosition, length int)
 			Begin: stream.PositionToBlockIndex().Position(from),
 			End:   stream.PositionToBlockIndex().Position(to),
 		}
-		keys, err := snapshot.GetRange(keyRange, fdb.RangeOptions{Mode: fdb.StreamingModeWantAll}).GetSliceWithError()
+		keys, err := tx.GetRange(keyRange, fdb.RangeOptions{Mode: fdb.StreamingModeWantAll}).GetSliceWithError()
 		if err != nil {
 			return nil, errors.Wrap(err, "get message range failed")
 		}
