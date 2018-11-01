@@ -1,11 +1,12 @@
 package storage
 
 import (
-	"encoding/binary"
+	"bytes"
 	"fmt"
 
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/c2h5oh/datasize"
+	"github.com/davecgh/go-xdr/xdr2"
 	"github.com/pkg/errors"
 	"github.com/rs/xid"
 	"go.uber.org/zap"
@@ -53,21 +54,19 @@ func (this *FdbStreams) pre(stream StreamSpace, from StreamPosition, length int)
 			return nil, errors.Wrap(err, "get message range failed")
 		}
 
-		messages := make([]BlockMessagePointer, len(keys))
+		pointers := make([]BlockMessagePointer, len(keys))
 		for n, kv := range keys {
-			blockId, err := xid.FromBytes(kv.Value[0:12])
-			if err != nil {
-				return nil, errors.Wrap(err, fmt.Sprintf("invalid block id at message pointer %v", from.NextN(n)))
+			var pointer BlockMessagePointer
+			if _, err := xdr.Unmarshal(bytes.NewReader(kv.Value), &pointer); err != nil {
+				return ReadPreparationState{}, errors.Wrap(err, fmt.Sprintf("error unmarshalling BlockMessagePointer at %v", kv.Key))
 			}
 
-			messageIndex := int(binary.BigEndian.Uint32(kv.Value[12:]))
-			messageSize := int(binary.BigEndian.Uint32(kv.Value[20:]))
-			messages[n] = BlockMessagePointer{blockId, messageIndex, messageSize}
+			pointers[n] = pointer
 		}
 
 		return ReadPreparationState{
 			From:     from,
-			Messages: messages,
+			Pointers: pointers,
 			Head:     head,
 		}, err
 	})
@@ -92,7 +91,7 @@ func chunkMessagePointers(log *zap.Logger, pointers []BlockMessagePointer) [][]B
 		size := 0 * datasize.B
 
 		for _, pointer := range left {
-			growth := datasize.ByteSize(pointer.messageSize)
+			growth := datasize.ByteSize(pointer.HeaderSize + pointer.ValueSize)
 			log.Debug("next message", zap.Stringer("growth", growth))
 			if (size + growth) > CHUNK_LIMIT {
 				if take == 0 {
@@ -141,7 +140,7 @@ func (this *FdbStreams) Read(id StreamId, from StreamPosition, length int) (Read
 			zap.Int("length", length))
 	}
 
-	if len(scan.Messages) == 0 {
+	if len(scan.Pointers) == 0 {
 		return ReadResult{from, from, false, make([]Message, 0)}, nil
 	}
 
@@ -150,7 +149,7 @@ func (this *FdbStreams) Read(id StreamId, from StreamPosition, length int) (Read
 	defer close(done)
 	defer close(complete)
 
-	chunks := chunkMessagePointers(this.log, scan.Messages)
+	chunks := chunkMessagePointers(this.log, scan.Pointers)
 	totalMessages := 0
 	for _, c := range chunks {
 		go func(pointers []BlockMessagePointer) {
@@ -158,7 +157,7 @@ func (this *FdbStreams) Read(id StreamId, from StreamPosition, length int) (Read
 				// TODO do not read in a blocking fashion
 				messages := make([]Message, len(pointers))
 				for i, ptr := range pointers {
-					msgSpace := this.rootSpace.Block(ptr.blockId).Message(ptr.messageIndex)
+					msgSpace := this.rootSpace.Block(ptr.BlockId).Message(ptr.MessageIndex)
 					header, err := msgSpace.Header().Read(tx)
 					if err != nil {
 						return nil, errors.Wrap(err, "header read failed")

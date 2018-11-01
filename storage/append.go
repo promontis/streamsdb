@@ -106,12 +106,21 @@ func (this *FdbStreams) safelyLinkBlock(stream StreamSpace, blockId xid.ID, mess
 			return NilStreamPosition, errors.Wrap(err, "read stream position failed")
 		}
 
-		start := pos.Next()
+		start := pos
 		head := start
 		index := stream.PositionToBlockIndex()
 		for i, m := range messages {
 			head = head.Next()
-			index.Position(head).Set(tx, blockId, i, len(m.Header)+len(m.Payload))
+			pointer := BlockMessagePointer{
+				BlockId:      blockId,
+				MessageIndex: i,
+				HeaderSize:   len(m.Header),
+				ValueSize:    len(m.Payload),
+			}
+
+			this.log.Debug("pointer set", zap.Stringer("position", head), zap.Any("pointer", pointer))
+
+			index.Position(head).Set(tx, pointer)
 		}
 
 		stream.SetPosition(tx, head)

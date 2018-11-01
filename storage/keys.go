@@ -1,15 +1,16 @@
 package storage
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/subspace"
 	"github.com/c2h5oh/datasize"
+	"github.com/davecgh/go-xdr/xdr2"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
-	"github.com/rs/xid"
 )
 
 const (
@@ -74,12 +75,13 @@ type PositionToBlockIndexSpace struct {
 	subspace.Subspace
 }
 
-func (this PositionToBlockIndexSpace) Set(tx fdb.Transaction, blockId xid.ID, messageIndex int, messageSize int) error {
-	indexBuf := make([]byte, 16)
-	binary.BigEndian.PutUint32(indexBuf, uint32(messageIndex))
-	binary.BigEndian.PutUint32(indexBuf[4:], uint32(messageSize))
+func (this PositionToBlockIndexSpace) Set(tx fdb.Transaction, value BlockMessagePointer) error {
+	var buffer bytes.Buffer
+	if _, err := xdr.Marshal(&buffer, value); err != nil {
+		return errors.Wrap(err, "marshal error")
+	}
 
-	tx.Set(this, append(blockId[:], indexBuf...))
+	tx.Set(this, buffer.Bytes())
 	return nil
 }
 

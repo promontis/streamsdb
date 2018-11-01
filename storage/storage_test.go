@@ -2,44 +2,73 @@ package storage
 
 import (
 	"bytes"
+	"fmt"
 	"math/rand"
 	"testing"
 	"time"
 
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/c2h5oh/datasize"
+	"github.com/davecgh/go-xdr/xdr2"
 	"github.com/pjvds/randombytes"
 	"github.com/rs/xid"
+	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 )
 
-func TestStreamAppendRoundtripWithLargePayload(t *testing.T) {
-	header := randombytes.Make(int(1 * datasize.MB))
-	value := randombytes.Make(int(8 * datasize.MB))
+func TestBlockMessagePointerMarshalling(t *testing.T) {
+	pointer := BlockMessagePointer{
+		BlockId:      xid.New(),
+		MessageIndex: 42,
+		HeaderSize:   43,
+		ValueSize:    44,
+	}
 
+	var buffer bytes.Buffer
+	_, err := xdr.Marshal(&buffer, pointer)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err.Error())
+		return
+	}
+
+	var unmarshalled BlockMessagePointer
+	if _, err := xdr.Unmarshal(&buffer, &unmarshalled); err != nil {
+		t.Fatalf("unmarshal failed: %v", err.Error())
+		return
+	}
+
+	assert.Equal(t, unmarshalled, pointer)
+}
+
+func TestSimpleStorage(t *testing.T) {
 	fdb.MustAPIVersion(520)
 	db := fdb.MustOpenDefault()
 	store := OpenFdb(db, zap.NewNop())
 	rand.Seed(time.Now().UnixNano())
 
-	stream := StreamId(rand.Uint64())
+	stream := StreamId(fmt.Sprintf("stream-%v", rand.Uint64()))
 
-	pos, err := store.Append(stream, Message{header, value})
-	if err != nil {
-		t.Fatalf("append error: %v", err)
-	}
+	t.Run("single message roundtrip", func(t *testing.T) {
+		header := []byte("header")
+		value := []byte("value")
 
-	result, err := store.Read(stream, pos, 1)
-	if err != nil {
-		t.Fatalf("read error: %v", err)
-	}
+		pos, err := store.Append(stream, Message{header, value})
+		if err != nil {
+			t.Fatalf("append error: %v", err)
+		}
 
-	if !bytes.Equal(header, result.Messages[0].Header) {
-		t.Errorf("header mismatch")
-	}
-	if !bytes.Equal(value, result.Messages[0].Payload) {
-		t.Errorf("value mismatch")
-	}
+		result, err := store.Read(stream, pos, 1)
+		if err != nil {
+			t.Fatalf("read error: %v", err)
+		}
+
+		if !bytes.Equal(header, result.Messages[0].Header) {
+			t.Errorf("header mismatch")
+		}
+		if !bytes.Equal(value, result.Messages[0].Payload) {
+			t.Errorf("value mismatch")
+		}
+	})
 }
 
 func BenchmarkStreamAppendAndReadRoundtrip(b *testing.B) {
