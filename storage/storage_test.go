@@ -69,6 +69,30 @@ func TestSimpleStorage(t *testing.T) {
 			t.Errorf("value mismatch")
 		}
 	})
+	t.Run("multiple appends", func(t *testing.T) {
+		appends := 3
+		firstPos, err := store.Append(stream, Message{Payload: []byte("0")})
+		if err != nil {
+			t.Fatalf("append error: %v", err)
+		}
+
+		for i := 1; i < appends; i++ {
+			pos, err := store.Append(stream, Message{Payload: []byte(fmt.Sprint(i))})
+			if err != nil {
+				t.Fatalf("append error: %v", err)
+			}
+
+			assert.Equal(t, firstPos.NextN(i), pos)
+		}
+
+		result, err := store.Read(stream, firstPos, 10)
+
+		assert.Equal(t, firstPos, result.From)
+		assert.Equal(t, appends, len(result.Messages))
+		assert.Equal(t, firstPos.NextN(appends), result.Next)
+		assert.Equal(t, "0", string(result.Messages[0].Payload))
+		assert.Equal(t, "1", string(result.Messages[1].Payload))
+	})
 }
 
 func BenchmarkStreamAppendAndReadRoundtrip(b *testing.B) {
