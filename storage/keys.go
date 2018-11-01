@@ -85,6 +85,10 @@ func (this PositionToBlockIndexSpace) Set(tx fdb.Transaction, value BlockMessage
 	return nil
 }
 
+func (this RootSpace) Tail() TailSpace {
+	return TailSpace{this.Sub("tail")}
+}
+
 func (this StreamSpace) ReadPosition(tx fdb.ReadTransaction) (StreamPosition, error) {
 	value, err := tx.Get(this.Position()).Get()
 	if err != nil {

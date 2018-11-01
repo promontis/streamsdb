@@ -5,6 +5,7 @@ import (
 
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/c2h5oh/datasize"
+	"github.com/cespare/xxhash"
 	"github.com/pkg/errors"
 	"github.com/rs/xid"
 	"go.uber.org/zap"
@@ -28,14 +29,15 @@ func (this *FdbStreams) Append(id StreamId, messages ...Message) (StreamPosition
 	this.log.Debug("block prepared", zap.String("block-id", blockId.String()))
 
 	// commit
-	pos, err := this.safelyLinkBlock(this.rootSpace.Stream(id), blockId, messages)
+	pos, err := this.safelyLinkBlock(id, blockId, messages)
 	if err != nil {
 		err = errors.Wrap(err, "append failed")
 
 		return NilStreamPosition, err
 	}
-	this.log.Debug("block commited", zap.String("block-id", blockId.String()))
-	return pos, nil
+
+	this.log.Debug("append success", zap.Any("commit", pos))
+	return pos.StreamPosition, nil
 }
 
 func toChunks(messages []Message) ([]Chunk, error) {
@@ -98,12 +100,21 @@ func (this *FdbStreams) writeBlock(id StreamId, chunks []Chunk) (xid.ID, error) 
 	return blockId, nil
 }
 
-func (this *FdbStreams) safelyLinkBlock(stream StreamSpace, blockId xid.ID, messages []Message) (StreamPosition, error) {
+type CommitResult struct {
+	StreamId       StreamId
+	BlockId        xid.ID
+	Partition      int64
+	StreamPosition StreamPosition
+	TailPosition   StreamPosition
+}
+
+func (this *FdbStreams) safelyLinkBlock(streamId StreamId, blockId xid.ID, messages []Message) (CommitResult, error) {
 	// TODO: remove unsuccesful blocks
 	pos, err := this.db.Transact(func(tx fdb.Transaction) (interface{}, error) {
+		stream := this.rootSpace.Stream(streamId)
 		pos, err := stream.ReadPosition(tx)
 		if err != nil {
-			return NilStreamPosition, errors.Wrap(err, "read stream position failed")
+			return CommitResult{}, errors.Wrap(err, "read stream position failed")
 		}
 
 		start := pos.Next()
@@ -123,10 +134,21 @@ func (this *FdbStreams) safelyLinkBlock(stream StreamSpace, blockId xid.ID, mess
 		}
 
 		stream.SetPosition(tx, start.NextN(len(messages)-1))
-		return start, nil
+		partition := int64(xxhash.Sum64([]byte(streamId))) % 255
+		tailPos, err := this.rootSpace.Tail().Partition(partition).AppendBlock(tx, streamId, blockId)
+		if err != nil {
+			return CommitResult{}, errors.Wrap(err, "tail append error")
+		}
+		return CommitResult{
+			StreamId:       streamId,
+			BlockId:        blockId,
+			StreamPosition: start,
+			Partition:      partition,
+			TailPosition:   tailPos,
+		}, nil
 	})
 
-	return pos.(StreamPosition), err
+	return pos.(CommitResult), err
 }
 
 type Chunk struct {
