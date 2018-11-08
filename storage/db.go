@@ -2,14 +2,12 @@ package storage
 
 import (
 	"bytes"
-	"context"
 
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/subspace"
 	"github.com/davecgh/go-xdr/xdr2"
 	"github.com/pkg/errors"
 	"github.com/rs/xid"
-	"go.uber.org/zap"
 )
 
 type TailSpace struct {
@@ -87,29 +85,4 @@ func (this PartitionSpace) CreateWatch(db fdb.Database) (fdb.FutureNil, error) {
 	}
 
 	return w.(fdb.FutureNil), nil
-}
-
-type TailContext struct {
-	space      TailSpace
-	partitions int
-	partition  int
-}
-
-func (this FdbStreams) RunTailers(ctx context.Context) error {
-	for i := 0; i < 255; i++ {
-		go func(partition int) {
-			for {
-				this.log.Debug("creating watch", zap.Int("partition", partition))
-				watch, err := this.rootSpace.Tail().Partition(int64(partition)).CreateWatch(this.db)
-				if err != nil {
-					this.log.Debug("watch creation failed", zap.Error(err))
-					continue
-				}
-				watch.BlockUntilReady()
-
-				this.log.Info("partition changed", zap.Int("partition", partition))
-			}
-		}(i)
-	}
-	return nil
 }

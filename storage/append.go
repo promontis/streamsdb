@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/c2h5oh/datasize"
@@ -12,24 +13,23 @@ import (
 )
 
 func (this *FdbStreams) Append(id StreamId, messages ...Message) (StreamPosition, error) {
-	// create chunks
-	chunks, err := toChunks(messages)
-	if err != nil {
-		err = errors.Wrap(err, "chunks creation failed")
-		return NilStreamPosition, err
-	}
-	this.log.Debug("append started", zap.Stringer("stream", id), zap.Int("message-count", len(messages)), zap.Int("chunk-count", len(chunks)))
-
 	// prepare
-	blockId, err := this.writeBlock(id, chunks)
+	blockId, pointers, err := this.writeBlock(id, messages)
 	if err != nil {
 		err = errors.Wrap(err, "append failed")
 		return NilStreamPosition, err
 	}
 	this.log.Debug("block prepared", zap.String("block-id", blockId.String()))
 
+	globalPartitionStream := StreamId(fmt.Sprintf("$global.%v", xxhash.Sum64String(id.String())%255))
+
 	// commit
-	pos, err := this.safelyLinkBlock(id, blockId, messages)
+	streams := []StreamId{
+		globalPartitionStream,
+		id,
+	}
+
+	pos, err := this.linkBlock(streams, blockId, pointers)
 	if err != nil {
 		err = errors.Wrap(err, "append failed")
 
@@ -37,7 +37,7 @@ func (this *FdbStreams) Append(id StreamId, messages ...Message) (StreamPosition
 	}
 
 	this.log.Debug("append success", zap.Any("commit", pos))
-	return pos.StreamPosition, nil
+	return pos.Positions[id], nil
 }
 
 func toChunks(messages []Message) ([]Chunk, error) {
@@ -75,11 +75,18 @@ func toChunks(messages []Message) ([]Chunk, error) {
 	return chunked, nil
 }
 
-func (this *FdbStreams) writeBlock(id StreamId, chunks []Chunk) (xid.ID, error) {
+func (this *FdbStreams) writeBlock(id StreamId, messages []Message) (xid.ID, []BlockMessagePointer, error) {
+	blockId := xid.New()
+
+	// create chunks
+	chunks, err := toChunks(messages)
+	if err != nil {
+		err = errors.Wrap(err, "chunks creation failed")
+		return blockId, nil, err
+	}
+
 	done := make(chan struct{})
 	defer close(done)
-
-	blockId := xid.New()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -91,64 +98,62 @@ func (this *FdbStreams) writeBlock(id StreamId, chunks []Chunk) (xid.ID, error) 
 		go this.writeChunk(ctx, block, c.Position, c.Messages, complete)
 	}
 
+	pointers := make([]BlockMessagePointer, len(messages))
+	for i, m := range messages {
+		pointers[i] = BlockMessagePointer{
+			BlockId:      blockId,
+			MessageIndex: i,
+			HeaderSize:   len(m.Header),
+			ValueSize:    len(m.Payload),
+		}
+	}
+
 	for range chunks {
 		if err := <-complete; err != nil {
 			// TODO: cleanup chunks?
-			return blockId, err
+			return blockId, pointers, err
 		}
 	}
-	return blockId, nil
+	return blockId, pointers, nil
 }
 
 type CommitResult struct {
-	StreamId       StreamId
-	BlockId        xid.ID
-	Partition      int64
-	StreamPosition StreamPosition
-	TailPosition   StreamPosition
+	Positions map[StreamId]StreamPosition
+	BlockId   xid.ID
 }
 
-func (this *FdbStreams) safelyLinkBlock(streamId StreamId, blockId xid.ID, messages []Message) (CommitResult, error) {
+func (this *FdbStreams) linkBlock(streamIds []StreamId, blockId xid.ID, pointers []BlockMessagePointer) (CommitResult, error) {
 	// TODO: remove unsuccesful blocks
 	pos, err := this.db.Transact(func(tx fdb.Transaction) (interface{}, error) {
-		stream := this.rootSpace.Stream(streamId)
-		pos, err := stream.ReadPosition(tx)
-		if err != nil {
-			return CommitResult{}, errors.Wrap(err, "read stream position failed")
-		}
+		positions := make(map[StreamId]StreamPosition, len(streamIds))
 
-		start := pos.Next()
-		index := stream.PositionToBlockIndex()
-		for i, m := range messages {
-			head := start.NextN(i)
-			pointer := BlockMessagePointer{
-				BlockId:      blockId,
-				MessageIndex: i,
-				HeaderSize:   len(m.Header),
-				ValueSize:    len(m.Payload),
+		for _, streamId := range streamIds {
+			stream := this.rootSpace.Stream(streamId)
+			start, err := stream.AppendBlockMessages(tx, blockId, pointers)
+			if err != nil {
+				return CommitResult{}, errors.Wrap(err, "append block to stream failure")
 			}
 
-			this.log.Debug("pointer set", zap.Stringer("position", head), zap.Any("pointer", pointer))
-
-			index.Position(head).Set(tx, pointer)
+			positions[streamId] = start
 		}
 
-		stream.SetPosition(tx, start.NextN(len(messages)-1))
-		partition := int64(xxhash.Sum64([]byte(streamId))) % 255
-		tailPos, err := this.rootSpace.Tail().Partition(partition).AppendBlock(tx, streamId, blockId)
-		if err != nil {
-			return CommitResult{}, errors.Wrap(err, "tail append error")
-		}
 		return CommitResult{
-			StreamId:       streamId,
-			BlockId:        blockId,
-			StreamPosition: start,
-			Partition:      partition,
-			TailPosition:   tailPos,
+			BlockId:   blockId,
+			Positions: positions,
 		}, nil
 	})
 
-	return pos.(CommitResult), err
+	if err != nil {
+		return CommitResult{}, errors.Wrap(err, "link block error")
+	}
+
+	commit, ok := pos.(CommitResult)
+	if !ok {
+		panic("invalid transaction result type")
+	}
+	this.log.Debug("block linked", zap.Any("commit", commit))
+
+	return commit, err
 }
 
 type Chunk struct {
