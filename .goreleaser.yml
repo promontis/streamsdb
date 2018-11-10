@@ -7,8 +7,15 @@ before:
     # you may remove this if you don't need go generate
     #- go generate ./...
 builds:
-- env:
-  - CGO_ENABLED=0
+- 
+  env:
+  - CGO_ENABLED=1
+  main: ./cli/main.go
+  binary: streamsdbc
+  goos:
+    - linux
+  goarch:
+    - amd64
 archive:
   replacements:
     darwin: Darwin
