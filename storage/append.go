@@ -21,11 +21,9 @@ func (this *FdbStreams) Append(id StreamId, messages ...Message) (StreamPosition
 	}
 	this.log.Debug("block prepared", zap.String("block-id", blockId.String()))
 
-	globalPartitionStream := StreamId(fmt.Sprintf("$global.%v", xxhash.Sum64String(id.String())%255))
-
 	// commit
 	streams := []StreamId{
-		globalPartitionStream,
+		StreamId(fmt.Sprintf("$global.%v", xxhash.Sum64String(id.String())%1024)),
 		id,
 	}
 

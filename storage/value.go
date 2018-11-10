@@ -80,7 +80,7 @@ func (this ValueSpace) Read(tx fdb.ReadTransaction) ([]byte, error) {
 
 		value := append(make([]byte, 0, s), firstValue[7:]...)
 
-		keyRange := fdb.KeyRange{this.Sub(1), this.Sub(n + 1)}
+		keyRange := fdb.KeyRange{Begin: this.Sub(1), End: this.Sub(n + 1)}
 		result := tx.GetRange(keyRange, fdb.RangeOptions{Mode: fdb.StreamingModeWantAll})
 		kvs, err := result.GetSliceWithError()
 

@@ -87,6 +87,7 @@ func TestSimpleStorage(t *testing.T) {
 
 		result, err := store.Read(stream, firstPos, 10)
 
+		assert.NoError(t, err)
 		assert.Equal(t, firstPos, result.From)
 		assert.Equal(t, appends, len(result.Messages))
 		assert.Equal(t, firstPos.NextN(appends), result.Next)

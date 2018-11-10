@@ -2,6 +2,7 @@ package storage
 
 import (
 	"bytes"
+	"fmt"
 
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/subspace"
@@ -27,9 +28,8 @@ func (this RootSpace) Stream(id StreamId) StreamSpace {
 	return StreamSpace{this.Sub(id)}
 }
 
-func (this StreamSpace) SetPosition(tx fdb.Transaction, pos StreamPosition) error {
+func (this StreamSpace) SetPosition(tx fdb.Transaction, pos StreamPosition) {
 	tx.Set(this.Position(), pos.Write())
-	return nil
 }
 
 type StreamSpace struct{ subspace.Subspace }
@@ -90,14 +90,13 @@ type PositionToBlockIndexSpace struct {
 	subspace.Subspace
 }
 
-func (this PositionToBlockIndexSpace) Set(tx fdb.Transaction, value BlockMessagePointer) error {
+func (this PositionToBlockIndexSpace) Set(tx fdb.Transaction, value BlockMessagePointer) {
 	var buffer bytes.Buffer
 	if _, err := xdr.Marshal(&buffer, value); err != nil {
-		return errors.Wrap(err, "marshal error")
+		panic(fmt.Sprintf("xdf marshal failed: %v", err))
 	}
 
 	tx.Set(this, buffer.Bytes())
-	return nil
 }
 
 func (this StreamSpace) ReadPosition(tx fdb.ReadTransaction) (StreamPosition, error) {

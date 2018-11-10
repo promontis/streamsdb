@@ -5,7 +5,7 @@ import (
 
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/subspace"
-	"github.com/davecgh/go-xdr/xdr2"
+	xdr "github.com/davecgh/go-xdr/xdr2"
 	"github.com/pkg/errors"
 	"github.com/rs/xid"
 )
@@ -55,9 +55,8 @@ func (this PartitionSpace) AppendBlock(tx fdb.Transaction, stream StreamId, bloc
 	return pos.Next(), nil
 }
 
-func (this PartitionSpace) SetHead(tx fdb.Transaction, position StreamPosition) error {
+func (this PartitionSpace) SetHead(tx fdb.Transaction, position StreamPosition) {
 	tx.Set(this.Sub("h"), position.Write())
-	return nil
 }
 
 func (this PartitionSpace) ReadHead(tx fdb.ReadTransaction) (StreamPosition, error) {

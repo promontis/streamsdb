@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"strconv"
-	"sync"
 
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/subspace"
@@ -112,11 +111,7 @@ type FdbStreams struct {
 	db        fdb.Database
 	rootSpace RootSpace
 	log       *zap.Logger
-
-	wg sync.WaitGroup
 }
-
-var bin = binary.BigEndian
 
 func PutUint64(value uint64) []byte {
 	buf := make([]byte, 8)

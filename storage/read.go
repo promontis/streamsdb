@@ -13,6 +13,7 @@ import (
 )
 
 type ReadResult struct {
+	Stream   StreamId
 	From     StreamPosition
 	Next     StreamPosition
 	HasNext  bool
@@ -144,7 +145,13 @@ func (this *FdbStreams) Read(id StreamId, from StreamPosition, length int) (Read
 	}
 
 	if len(scan.Pointers) == 0 {
-		return ReadResult{from, from, false, make([]Message, 0)}, nil
+		return ReadResult{
+			Stream:   id,
+			From:     from,
+			Next:     0,
+			HasNext:  false,
+			Messages: make([]Message, 0),
+		}, nil
 	}
 
 	done := make(chan struct{})
@@ -205,5 +212,5 @@ func (this *FdbStreams) Read(id StreamId, from StreamPosition, length int) (Read
 
 	next := from.NextN(len(messages))
 	hasNext := scan.Head.IsAfter(next)
-	return ReadResult{from, next, hasNext, messages}, nil
+	return ReadResult{id, from, next, hasNext, messages}, nil
 }
