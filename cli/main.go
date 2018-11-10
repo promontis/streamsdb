@@ -2,10 +2,14 @@ package main
 
 import (
 	"os"
+	"strconv"
+	"time"
 
 	"io"
 
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
+	"github.com/paulbellamy/ratecounter"
+
 	//"github.com/francoispqt/gojay"
 	"encoding/json"
 
@@ -15,11 +19,12 @@ import (
 )
 
 func main() {
-	log, err := zap.NewDevelopmentConfig().Build()
-	if err != nil {
-		println(err)
-		return
-	}
+	//log, err := zap.NewDevelopmentConfig().Build()
+	//if err != nil {
+	//	println(err)
+	//	return
+	//}
+	log := zap.NewNop()
 
 	fdb.MustAPIVersion(520)
 	db := fdb.MustOpenDefault()
@@ -72,6 +77,43 @@ func main() {
 					println(err.Error())
 				}
 				return nil
+			},
+		},
+		{
+			Name: "write-benchmark",
+			Action: func(c *cli.Context) error {
+				counter := ratecounter.NewRateCounter(1 * time.Second)
+
+				errors := make(chan error)
+				for i := 0; i < 1000; i++ {
+					go func(i int) {
+						stream := storage.StreamId(c.Args().First() + strconv.Itoa(i))
+						for {
+							_, err := streamdb.Append(stream,
+								storage.Message{Payload: []byte("hello-world")},
+								storage.Message{Payload: []byte("hello-world")},
+								storage.Message{Payload: []byte("hello-world")},
+								storage.Message{Payload: []byte("hello-world")},
+								storage.Message{Payload: []byte("hello-world")},
+							)
+							if err != nil {
+								errors <- err
+							}
+
+							counter.Incr(5)
+						}
+					}(i)
+				}
+
+				for {
+					select {
+					case <-time.After(1 * time.Second):
+						println(counter.String())
+					case err := <-errors:
+						println("FAILED", err)
+						return nil
+					}
+				}
 			},
 		},
 	}
