@@ -11,11 +11,11 @@ import (
 )
 
 func TestValueRoundtrip(t *testing.T) {
-	space := subspace.Sub("test", t.Name())
+	space := subspace.Sub("tests", t.Name())
 	db := fdb.MustOpenDefault()
 
 	//nolint:errcheck
-	defer db.Transact(func(tx fdb.Transaction) (interface{}, error) {
+	db.Transact(func(tx fdb.Transaction) (interface{}, error) {
 		tx.ClearRange(space)
 		return nil, nil
 	})
