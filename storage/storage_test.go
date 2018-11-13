@@ -166,38 +166,6 @@ func BenchmarkStreamRead(b *testing.B) {
 	b.Run("5mb", func(b *testing.B) { roundtrip(b, 1*datasize.MB) })
 }
 
-func BenchmarkStreamAppend(b *testing.B) {
-	fdb.MustAPIVersion(520)
-	db := fdb.MustOpenDefault()
-	store := OpenFdb(db, zap.NewNop())
-	rand.Seed(time.Now().UnixNano())
-	roundtrip := func(b *testing.B, size datasize.ByteSize) {
-		stream := StreamId(xid.New().String())
-		message := Message{
-			Payload: randombytes.Make(int(8 * datasize.MB)),
-		}
-		pos, _ := store.Append(stream, message)
-		store.Read(stream, pos, 1)
-
-		b.SetBytes(int64(size) * 2)
-		b.ResetTimer()
-
-		for n := 0; n < b.N; n++ {
-			_, err := store.Append(stream, message)
-			if err != nil {
-				b.Fatalf("append error: %v", err)
-			}
-		}
-	}
-
-	b.Run("1kb", func(b *testing.B) { roundtrip(b, 1*datasize.KB) })
-	b.Run("5kb", func(b *testing.B) { roundtrip(b, 5*datasize.KB) })
-	b.Run("75kb", func(b *testing.B) { roundtrip(b, 75*datasize.KB) })
-	b.Run("500kb", func(b *testing.B) { roundtrip(b, 500*datasize.KB) })
-	b.Run("1mb", func(b *testing.B) { roundtrip(b, 1*datasize.MB) })
-	b.Run("5mb", func(b *testing.B) { roundtrip(b, 1*datasize.MB) })
-}
-
 func TestStreamAppend(t *testing.T) {
 	testMessage := func(i int) Message {
 		return Message{

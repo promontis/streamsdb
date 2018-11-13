@@ -1,14 +1,9 @@
 package storage
 
 import (
-	"context"
 	"encoding/binary"
 	"fmt"
-	"os"
 	"strconv"
-	"time"
-
-	stdlog "log"
 
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/subspace"
@@ -118,7 +113,7 @@ func OpenFdb(db fdb.Database, log *zap.Logger) *FdbStreams {
 			blockConnectStreamCount: metrics.GetOrRegisterCounter("block.connect.streams.Count", metrics.DefaultRegistry),
 		},
 	}
-	go metrics.LogScaledWithContext(context.Background(), metrics.DefaultRegistry, 5*time.Second, time.Millisecond, stdlog.New(os.Stderr, "metrics: ", stdlog.Lmicroseconds))
+	//go metrics.LogScaledWithContext(context.Background(), metrics.DefaultRegistry, 5*time.Second, time.Millisecond, stdlog.New(os.Stderr, "metrics: ", stdlog.Lmicroseconds))
 
 	this.rootSpace = RootSpace{this, subspace.Sub("s")}
 	return this
