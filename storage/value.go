@@ -1,13 +1,12 @@
 package storage
 
 import (
-	"encoding/binary"
-	"fmt"
+	"bytes"
 
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/subspace"
+	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/c2h5oh/datasize"
-	"github.com/pkg/errors"
 )
 
 const (
@@ -23,79 +22,41 @@ type ValueSpace struct {
 }
 
 func (this ValueSpace) Set(tx fdb.Transaction, value []byte) {
-	const metadataSize = 7
-
-	// write single value
-	if len(value) <= ValuePartLimit {
-		buf := make([]byte, len(value)+1)
-		buf[0] = SingleValue
-		copy(buf[1:], value)
-
-		tx.Set(this.Sub(0), buf)
-		return
-	}
-
-	// write multi value
-	i := 1
-	buf := value[ValuePartLimit-metadataSize:]
-
-	// first write all values, except the first one
-	for len(buf) > 0 {
-		take := ValuePartLimit
-		if take > len(buf) {
-			take = len(buf)
+	min := func(a, b int) int {
+		if a < b {
+			return a
 		}
-
-		tx.Set(this.Sub(i), buf[0:take])
-		buf = buf[take:]
-		i++
+		return b
 	}
 
-	// now we know how much values we have written, so
-	// write the first value including the meta data
-	first := make([]byte, ValuePartLimit)
-	copy(first[metadataSize:], value)
-	first[0] = MultiValue
-	binary.BigEndian.PutUint16(first[1:], uint16(i))
-	binary.BigEndian.PutUint32(first[3:], uint32(len(value)))
-
-	tx.Set(this.Sub(0), first)
+	for i := 0; i < len(value); i += ValuePartLimit {
+		to := min(i+ValuePartLimit, len(value))
+		tx.Options().SetNextWriteNoWriteConflictRange()
+		tx.Set(this.Pack(tuple.Tuple{i}), value[i:to])
+	}
 }
 
 // Read read a value from the value space. It handles single and
 // multipart values and is optimized to want the full value at once.
 func (this ValueSpace) Read(tx fdb.ReadTransaction) ([]byte, error) {
-	if firstValue := tx.Get(this.Sub(0)).MustGet(); len(firstValue) > 0 {
-		valueType := firstValue[0]
+	result := tx.GetRange(this, fdb.RangeOptions{
+		Mode: fdb.StreamingModeWantAll,
+	})
 
-		if valueType == SingleValue {
-			return firstValue[1:], nil
-		}
-		if valueType != MultiValue {
-			return nil, errors.New("unexpected first value byte")
-		}
-
-		n := int(binary.BigEndian.Uint16(firstValue[1:]))
-		s := int(binary.BigEndian.Uint32(firstValue[3:]))
-
-		value := append(make([]byte, 0, s), firstValue[7:]...)
-
-		keyRange := fdb.KeyRange{Begin: this.Sub(1), End: this.Sub(n + 1)}
-		result := tx.GetRange(keyRange, fdb.RangeOptions{Mode: fdb.StreamingModeWantAll})
-		kvs, err := result.GetSliceWithError()
-
-		if err != nil {
-			return nil, errors.Wrap(err, "get range failed")
-		}
-
-		for _, kv := range kvs {
-			value = append(value, kv.Value...)
-		}
-		if s != len(value) {
-			return nil, errors.New(fmt.Sprintf("read short: %v instead of %v", len(value), s))
-		}
-
-		return value, nil
+	kvs := result.GetSliceOrPanic()
+	if len(kvs) == 0 {
+		return make([]byte, 0), nil
 	}
-	return nil, errors.New("not found")
+	if len(kvs) == 1 {
+		return kvs[0].Value, nil
+	}
+
+	buffer := bytes.Buffer{}
+	buffer.Grow(len(kvs) * ValuePartLimit)
+
+	for _, kv := range kvs {
+		buffer.Write(kv.Value)
+	}
+
+	return buffer.Bytes(), nil
 }
