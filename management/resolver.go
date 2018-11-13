@@ -9,7 +9,7 @@ import (
 )
 
 type Resolver struct {
-	Store storage.FdbStreams
+	Store *storage.FdbStreams
 }
 
 func (r *Resolver) Mutation() MutationResolver {

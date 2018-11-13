@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	log "log"
 	http "net/http"
 	os "os"
@@ -24,7 +23,6 @@ func main() {
 	db := fdb.MustOpenDefault()
 	logger, _ := zap.NewDevelopment()
 	store := storage.OpenFdb(db, logger)
-	go store.RunTailers(context.TODO())
 
 	http.Handle("/", handler.Playground("GraphQL playground", "/query"))
 	http.Handle("/query", handler.GraphQL(management.NewExecutableSchema(management.Config{Resolvers: &management.Resolver{store}})))
