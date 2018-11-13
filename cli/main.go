@@ -2,28 +2,22 @@ package main
 
 import (
 	"os"
+	"runtime/pprof"
 	"strconv"
-	"time"
 
 	"io"
 
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
-	"github.com/paulbellamy/ratecounter"
 
-	//"github.com/francoispqt/gojay"
 	"encoding/json"
 
+	"github.com/pjvds/randombytes"
 	"github.com/pjvds/streamsdb/storage"
 	"github.com/urfave/cli"
 	"go.uber.org/zap"
 )
 
 func main() {
-	//log, err := zap.NewDevelopmentConfig().Build()
-	//if err != nil {
-	//	println(err)
-	//	return
-	//}
 	log := zap.NewNop()
 
 	fdb.MustAPIVersion(520)
@@ -32,6 +26,30 @@ func main() {
 
 	app := cli.NewApp()
 	app.Name = "sdb-cli"
+	app.Flags = []cli.Flag{
+		cli.StringFlag{
+			Name:  "cpuprofile",
+			Usage: "write cpu profile to `file`",
+		},
+	}
+	app.Before = func(c *cli.Context) error {
+		if path := c.String("cpuprofile"); len(path) > 0 {
+			f, err := os.Create(path)
+			if err != nil {
+				println("could not create CPU profile: ", err.Error())
+				os.Exit(1)
+			}
+			if err := pprof.StartCPUProfile(f); err != nil {
+				println("could not start CPU profile: ", err.Error())
+				os.Exit(1)
+			}
+		}
+		return nil
+	}
+	app.After = func(c *cli.Context) error {
+		pprof.StopCPUProfile()
+		return nil
+	}
 	app.Commands = []cli.Command{
 		{
 			Name: "append",
@@ -82,38 +100,31 @@ func main() {
 		{
 			Name: "write-benchmark",
 			Action: func(c *cli.Context) error {
-				counter := ratecounter.NewRateCounter(1 * time.Second)
+				payload := randombytes.Make(250)
 
 				errors := make(chan error)
 				for i := 0; i < 1000; i++ {
 					go func(i int) {
 						stream := storage.StreamId(c.Args().First() + strconv.Itoa(i))
+						messages := []storage.Message{
+							{Payload: payload},
+							{Payload: payload},
+							{Payload: payload},
+							{Payload: payload},
+						}
+
 						for {
-							_, err := streamdb.Append(stream,
-								storage.Message{Payload: []byte("hello-world")},
-								storage.Message{Payload: []byte("hello-world")},
-								storage.Message{Payload: []byte("hello-world")},
-								storage.Message{Payload: []byte("hello-world")},
-								storage.Message{Payload: []byte("hello-world")},
-							)
+							_, err := streamdb.Append(stream, messages...)
 							if err != nil {
 								errors <- err
 							}
-
-							counter.Incr(5)
 						}
 					}(i)
 				}
 
-				for {
-					select {
-					case <-time.After(1 * time.Second):
-						println(counter.String())
-					case err := <-errors:
-						println("FAILED", err)
-						return nil
-					}
-				}
+				err := <-errors
+				println("FAILED", err)
+				return nil
 			},
 		},
 	}
