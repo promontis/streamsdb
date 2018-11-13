@@ -12,15 +12,16 @@ import (
 	"github.com/rs/xid"
 )
 
-const (
-	ElemBlocks   = iota
-	ElemBlock    = iota
-	ElemHeader   = iota
-	ElemValue    = iota
-	ElemPosition = iota
+var (
+	ElemBlocks   = []byte{'B'}
+	ElemBlock    = []byte{'b'}
+	ElemHeader   = []byte{'h'}
+	ElemValue    = []byte{'v'}
+	ElemPosition = []byte{'p'}
 )
 
 type RootSpace struct {
+	*FdbStreams
 	subspace.Subspace
 }
 
