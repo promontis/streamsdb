@@ -46,10 +46,6 @@ func main() {
 		}
 		return nil
 	}
-	app.After = func(c *cli.Context) error {
-		pprof.StopCPUProfile()
-		return nil
-	}
 	app.Commands = []cli.Command{
 		{
 			Name: "append",
