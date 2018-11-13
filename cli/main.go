@@ -100,6 +100,7 @@ func main() {
 		{
 			Name: "write-benchmark",
 			Action: func(c *cli.Context) error {
+				defer pprof.StopCPUProfile()
 				payload := randombytes.Make(250)
 
 				errors := make(chan error)
