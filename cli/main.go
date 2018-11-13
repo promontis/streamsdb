@@ -4,6 +4,7 @@ import (
 	"os"
 	"runtime/pprof"
 	"strconv"
+	"time"
 
 	"io"
 
@@ -43,6 +44,13 @@ func main() {
 				println("could not start CPU profile: ", err.Error())
 				os.Exit(1)
 			}
+
+			println("CPU profiling started")
+			go func() {
+				for range time.Tick(5 * time.Second) {
+					f.Sync()
+				}
+			}()
 		}
 		return nil
 	}
