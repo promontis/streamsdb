@@ -13,6 +13,7 @@ import (
 )
 
 type ReadResult struct {
+	// TODO: include HEAD
 	Stream   StreamId
 	From     StreamPosition
 	Next     StreamPosition
@@ -20,21 +21,21 @@ type ReadResult struct {
 	Messages []Message
 }
 
-type BlockMessagePointer struct {
+type MessagePointer struct {
 	BlockId      xid.ID
 	MessageIndex int
 	HeaderSize   int
 	ValueSize    int
 }
 
-func (this BlockMessagePointer) String() string {
+func (this MessagePointer) String() string {
 	return fmt.Sprintf("%v/%v", this.BlockId, this.MessageIndex)
 }
 
 type ReadPreparationState struct {
 	From     StreamPosition
 	Head     StreamPosition
-	Pointers []BlockMessagePointer
+	Pointers []MessagePointer
 }
 
 func (this *FdbStreams) pre(stream StreamSpace, from StreamPosition, length int) (ReadPreparationState, error) {
@@ -48,19 +49,20 @@ func (this *FdbStreams) pre(stream StreamSpace, from StreamPosition, length int)
 			return ReadPreparationState{from, head, nil}, nil
 		}
 
-		to := from.NextN(length).OrLower(head).Next()
+		//
+		exclusiveEnd := from.NextN(length).OrLower(head).Next()
 		keyRange := fdb.KeyRange{
 			Begin: stream.PositionToBlockIndex().Position(from),
-			End:   stream.PositionToBlockIndex().Position(to),
+			End:   stream.PositionToBlockIndex().Position(exclusiveEnd),
 		}
 		keys, err := tx.GetRange(keyRange, fdb.RangeOptions{Mode: fdb.StreamingModeWantAll}).GetSliceWithError()
 		if err != nil {
 			return nil, errors.Wrap(err, "get message range failed")
 		}
 
-		pointers := make([]BlockMessagePointer, len(keys))
+		pointers := make([]MessagePointer, len(keys))
 		for n, kv := range keys {
-			var pointer BlockMessagePointer
+			var pointer MessagePointer
 			if _, err := xdr.Unmarshal(bytes.NewReader(kv.Value), &pointer); err != nil {
 				return ReadPreparationState{}, errors.Wrap(err, fmt.Sprintf("error unmarshalling BlockMessagePointer at %v", kv.Key))
 			}
@@ -85,10 +87,10 @@ func (this *FdbStreams) pre(stream StreamSpace, from StreamPosition, length int)
 	return typed, err
 }
 
-func chunkMessagePointers(log *zap.Logger, pointers []BlockMessagePointer) [][]BlockMessagePointer {
+func chunkMessagePointers(log *zap.Logger, pointers []MessagePointer) [][]MessagePointer {
 	left := pointers
 	position := 0
-	chunks := make([][]BlockMessagePointer, 0)
+	chunks := make([][]MessagePointer, 0)
 
 	for len(left) != 0 {
 		take := 0
@@ -162,7 +164,7 @@ func (this *FdbStreams) Read(id StreamId, from StreamPosition, length int) (Read
 	chunks := chunkMessagePointers(this.log, scan.Pointers)
 	totalMessages := 0
 	for _, c := range chunks {
-		go func(pointers []BlockMessagePointer) {
+		go func(pointers []MessagePointer) {
 			msgs, err := this.db.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
 				// TODO do not read in a blocking fashion
 				messages := make([]Message, len(pointers))

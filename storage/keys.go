@@ -53,7 +53,7 @@ type BlockRelationSpace struct {
 	subspace.Subspace
 }
 
-func (stream StreamSpace) AppendBlockMessages(tx fdb.Transaction, blockId xid.ID, pointers []BlockMessagePointer) (StreamPosition, error) {
+func (stream StreamSpace) AppendBlockMessages(tx fdb.Transaction, blockId xid.ID, pointers []MessagePointer) (StreamPosition, error) {
 	pos, err := stream.ReadPosition(tx)
 	if err != nil {
 		return NilStreamPosition, errors.Wrap(err, "read stream position failed")
@@ -71,6 +71,7 @@ func (stream StreamSpace) AppendBlockMessages(tx fdb.Transaction, blockId xid.ID
 }
 
 func (this StreamSpace) WriteBlockRelation(tx fdb.Transaction, pos StreamPosition, blockId uuid.UUID) error {
+	tx.Options().SetNextWriteNoWriteConflictRange()
 	tx.Set(this.Sub(ElemBlocks, int64(pos)), blockId[:])
 	return nil
 }
@@ -91,12 +92,13 @@ type PositionToBlockIndexSpace struct {
 	subspace.Subspace
 }
 
-func (this PositionToBlockIndexSpace) Set(tx fdb.Transaction, value BlockMessagePointer) {
+func (this PositionToBlockIndexSpace) Set(tx fdb.Transaction, value MessagePointer) {
 	var buffer bytes.Buffer
 	if _, err := xdr.Marshal(&buffer, value); err != nil {
 		panic(fmt.Sprintf("xdf marshal failed: %v", err))
 	}
 
+	tx.Options().SetNextWriteNoWriteConflictRange()
 	tx.Set(this, buffer.Bytes())
 }
 
