@@ -17,7 +17,7 @@ import (
 )
 
 func TestBlockMessagePointerMarshalling(t *testing.T) {
-	pointer := BlockMessagePointer{
+	pointer := MessagePointer{
 		BlockId:      xid.New(),
 		MessageIndex: 42,
 		HeaderSize:   43,
@@ -31,7 +31,7 @@ func TestBlockMessagePointerMarshalling(t *testing.T) {
 		return
 	}
 
-	var unmarshalled BlockMessagePointer
+	var unmarshalled MessagePointer
 	if _, err := xdr.Unmarshal(&buffer, &unmarshalled); err != nil {
 		t.Fatalf("unmarshal failed: %v", err.Error())
 		return
@@ -106,6 +106,10 @@ func BenchmarkStreamAppendAndReadRoundtrip(b *testing.B) {
 		message := Message{
 			Payload: randombytes.Make(int(8 * datasize.MB)),
 		}
+		pos, _ := store.Append(stream, message)
+		store.Read(stream, pos, 1)
+
+		b.SetBytes(int64(size) * 2)
 		b.ResetTimer()
 
 		for n := 0; n < b.N; n++ {
@@ -127,6 +131,124 @@ func BenchmarkStreamAppendAndReadRoundtrip(b *testing.B) {
 	b.Run("500kb", func(b *testing.B) { roundtrip(b, 500*datasize.KB) })
 	b.Run("1mb", func(b *testing.B) { roundtrip(b, 1*datasize.MB) })
 	b.Run("5mb", func(b *testing.B) { roundtrip(b, 1*datasize.MB) })
+}
+
+func BenchmarkStreamRead(b *testing.B) {
+	fdb.MustAPIVersion(520)
+	db := fdb.MustOpenDefault()
+	store := OpenFdb(db, zap.NewNop())
+	rand.Seed(time.Now().UnixNano())
+	roundtrip := func(b *testing.B, size datasize.ByteSize) {
+		stream := StreamId(xid.New().String())
+		message := Message{
+			Payload: randombytes.Make(int(8 * datasize.MB)),
+		}
+		pos, err := store.Append(stream, message)
+		if err != nil {
+			b.Fatalf("append error: %v", err)
+		}
+
+		b.SetBytes(int64(size) * 2)
+		b.ResetTimer()
+		for n := 0; n < b.N; n++ {
+			_, err := store.Read(stream, pos, 1)
+			if err != nil {
+				b.Fatalf("read error: %v", err)
+			}
+		}
+	}
+
+	b.Run("1kb", func(b *testing.B) { roundtrip(b, 1*datasize.KB) })
+	b.Run("5kb", func(b *testing.B) { roundtrip(b, 5*datasize.KB) })
+	b.Run("75kb", func(b *testing.B) { roundtrip(b, 75*datasize.KB) })
+	b.Run("500kb", func(b *testing.B) { roundtrip(b, 500*datasize.KB) })
+	b.Run("1mb", func(b *testing.B) { roundtrip(b, 1*datasize.MB) })
+	b.Run("5mb", func(b *testing.B) { roundtrip(b, 1*datasize.MB) })
+}
+
+func BenchmarkStreamAppend(b *testing.B) {
+	fdb.MustAPIVersion(520)
+	db := fdb.MustOpenDefault()
+	store := OpenFdb(db, zap.NewNop())
+	rand.Seed(time.Now().UnixNano())
+	roundtrip := func(b *testing.B, size datasize.ByteSize) {
+		stream := StreamId(xid.New().String())
+		message := Message{
+			Payload: randombytes.Make(int(8 * datasize.MB)),
+		}
+		pos, _ := store.Append(stream, message)
+		store.Read(stream, pos, 1)
+
+		b.SetBytes(int64(size) * 2)
+		b.ResetTimer()
+
+		for n := 0; n < b.N; n++ {
+			_, err := store.Append(stream, message)
+			if err != nil {
+				b.Fatalf("append error: %v", err)
+			}
+		}
+	}
+
+	b.Run("1kb", func(b *testing.B) { roundtrip(b, 1*datasize.KB) })
+	b.Run("5kb", func(b *testing.B) { roundtrip(b, 5*datasize.KB) })
+	b.Run("75kb", func(b *testing.B) { roundtrip(b, 75*datasize.KB) })
+	b.Run("500kb", func(b *testing.B) { roundtrip(b, 500*datasize.KB) })
+	b.Run("1mb", func(b *testing.B) { roundtrip(b, 1*datasize.MB) })
+	b.Run("5mb", func(b *testing.B) { roundtrip(b, 1*datasize.MB) })
+}
+
+func TestStreamAppend(t *testing.T) {
+	testMessage := func(i int) Message {
+		return Message{
+			Header:  []byte(fmt.Sprintf("header-%v", i)),
+			Payload: []byte(fmt.Sprintf("payload-%v", i)),
+		}
+	}
+
+	fdb.MustAPIVersion(520)
+	db := fdb.MustOpenDefault()
+	store := OpenFdb(db, zap.NewNop())
+	rand.Seed(time.Now().UnixNano())
+
+	stream := StreamId("test-" + t.Name())
+	db.Transact(func(tx fdb.Transaction) (interface{}, error) {
+		tx.ClearRange(store.rootSpace.Stream(stream))
+		return nil, nil
+	})
+
+	// The position before appending, NilPosition for new streams,
+	// otherwise equal to number of messages in the stream.
+	// Expect: [0]
+	posBeforeAppend, err := db.Transact(func(tx fdb.Transaction) (interface{}, error) {
+		return store.rootSpace.Stream(stream).ReadPosition(tx)
+	})
+	assert.Equal(t, NilStreamPosition, posBeforeAppend)
+	assert.NoError(t, err)
+
+	// Append 3 messages to the stream. Append position should be previous
+	// position + 1, equal to the position of the first messages appended.
+	// Expected: [1]
+	messages := []Message{
+		testMessage(1),
+		testMessage(2),
+		testMessage(3),
+	}
+	posAppended, err := store.Append(stream, messages...)
+	assert.NoError(t, err)
+	assert.Equal(t, StreamPosition(1), posAppended)
+
+	// Position after append should be equal to the appending position plus message count.
+	// Expected: [3]
+	posAfterAppend, err := db.Transact(func(tx fdb.Transaction) (interface{}, error) {
+		return store.rootSpace.Stream(stream).ReadPosition(tx)
+	})
+	assert.Equal(t, StreamPosition(len(messages)), posAfterAppend)
+
+	// Validate the message by comparing the written messages by a read result.
+	readResult, err := store.Read(stream, posAppended, len(messages))
+	assert.NoError(t, err)
+	assert.Equal(t, messages, readResult.Messages)
 }
 
 /*
