@@ -1,8 +1,8 @@
 package storage
 
 import (
-	"context"
 	"fmt"
+	"time"
 
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/c2h5oh/datasize"
@@ -13,6 +13,11 @@ import (
 )
 
 func (this *FdbStreams) Append(id StreamId, messages ...Message) (StreamPosition, error) {
+	defer func(t time.Time) {
+		this.metrics.storeAppendTime.UpdateSince(t)
+		this.metrics.storeAppendCount.Count()
+	}(time.Now())
+
 	// prepare
 	blockId, pointers, err := this.writeBlock(id, messages)
 	if err != nil {
@@ -38,67 +43,22 @@ func (this *FdbStreams) Append(id StreamId, messages ...Message) (StreamPosition
 	return pos.Positions[id], nil
 }
 
-func toChunks(messages []Message) ([]Chunk, error) {
-	left := messages
-	position := 0
-	chunked := make([]Chunk, 0)
+func (this *FdbStreams) writeBlock(id StreamId, messages []Message) (xid.ID, []MessagePointer, error) {
+	defer func(t time.Time) {
+		this.metrics.blockWriteTime.UpdateSince(t)
+		this.metrics.blockWriteCount.Count()
+	}(time.Now())
 
-	for len(left) != 0 {
-		take := 0
-		size := 0 * datasize.B
-		for _, m := range left {
-			growth := datasize.ByteSize((len(m.Header) + len(m.Payload)))
-			if size+growth > CHUNK_LIMIT {
-				if take == 0 {
-					panic("take should never be 0")
-				}
-
-				break
-			}
-
-			take++
-			size += growth
-		}
-
-		chunked = append(chunked, Chunk{
-			Index:    len(chunked),
-			Position: position,
-			Messages: left[0:take],
-			Size:     size,
-		})
-
-		left = left[take:]
-		position += take
-	}
-	return chunked, nil
-}
-
-func (this *FdbStreams) writeBlock(id StreamId, messages []Message) (xid.ID, []BlockMessagePointer, error) {
 	blockId := xid.New()
 
-	// create chunks
-	chunks, err := toChunks(messages)
-	if err != nil {
-		err = errors.Wrap(err, "chunks creation failed")
+	block := this.rootSpace.Block(blockId)
+	if err := block.Set(messages); err != nil {
 		return blockId, nil, err
 	}
 
-	done := make(chan struct{})
-	defer close(done)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	complete := make(chan error)
-	block := this.rootSpace.Block(blockId)
-
-	for _, c := range chunks {
-		go this.writeChunk(ctx, block, c.Position, c.Messages, complete)
-	}
-
-	pointers := make([]BlockMessagePointer, len(messages))
+	pointers := make([]MessagePointer, len(messages))
 	for i, m := range messages {
-		pointers[i] = BlockMessagePointer{
+		pointers[i] = MessagePointer{
 			BlockId:      blockId,
 			MessageIndex: i,
 			HeaderSize:   len(m.Header),
@@ -106,12 +66,6 @@ func (this *FdbStreams) writeBlock(id StreamId, messages []Message) (xid.ID, []B
 		}
 	}
 
-	for range chunks {
-		if err := <-complete; err != nil {
-			// TODO: cleanup chunks?
-			return blockId, pointers, err
-		}
-	}
 	return blockId, pointers, nil
 }
 
@@ -120,25 +74,47 @@ type CommitResult struct {
 	BlockId   xid.ID
 }
 
-func (this *FdbStreams) linkBlock(streamIds []StreamId, blockId xid.ID, pointers []BlockMessagePointer) (CommitResult, error) {
+func (this *FdbStreams) linkBlock(streamIds []StreamId, blockId xid.ID, pointers []MessagePointer) (CommitResult, error) {
+	defer func(t time.Time) {
+		this.metrics.blockConnectTime.UpdateSince(t)
+		this.metrics.blockConnectCount.Count()
+		this.metrics.blockConnectStreamCount.Inc(int64(len(streamIds)))
+	}(time.Now())
+
+	type Result struct {
+		Stream   StreamId
+		Position StreamPosition
+		Error    error
+	}
 	// TODO: remove unsuccesful blocks
 	pos, err := this.db.Transact(func(tx fdb.Transaction) (interface{}, error) {
 		positions := make(map[StreamId]StreamPosition, len(streamIds))
+		results := make(chan Result)
 
 		for _, streamId := range streamIds {
-			stream := this.rootSpace.Stream(streamId)
-			start, err := stream.AppendBlockMessages(tx, blockId, pointers)
-			if err != nil {
-				return CommitResult{}, errors.Wrap(err, "append block to stream failure")
-			}
+			go func(streamId StreamId) {
+				stream := this.rootSpace.Stream(streamId)
+				start, err := stream.AppendBlockMessages(tx, blockId, pointers)
 
-			positions[streamId] = start
+				results <- Result{streamId, start, err}
+			}(streamId)
+
+		}
+
+		var err error
+		for range streamIds {
+			result := <-results
+			if result.Error != nil {
+				err = result.Error
+			} else {
+				positions[result.Stream] = result.Position
+			}
 		}
 
 		return CommitResult{
 			BlockId:   blockId,
 			Positions: positions,
-		}, nil
+		}, err
 	})
 
 	if err != nil {
